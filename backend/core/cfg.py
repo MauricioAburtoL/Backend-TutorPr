@@ -355,6 +355,13 @@ _ADAPTERS = {
 def build_cfg_any(lang: str, code: str) -> Dict[str, Any]:
     if lang not in _ADAPTERS:
         raise ValueError(f"language not supported: {lang}")
-    data = _ADAPTERS[lang](code)
-    mermaid = cfg_to_mermaid(data["nodes"], data["edges"])
-    return {"language": lang, "mermaid": mermaid, "nodes": data["nodes"]}
+
+    data = _ADAPTERS[lang](code)  # debe devolver al menos {"nodes": [...], "edges": [...]}
+    mermaid = cfg_to_mermaid(data.get("nodes", []), data.get("edges", []))
+
+    return {
+        "language": lang,
+        "mermaid": mermaid,
+        "nodes": data.get("nodes", []),
+        "edges": data.get("edges", []),  # ← IMPORTANTE
+    }

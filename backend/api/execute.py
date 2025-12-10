@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from typing import Dict, Any
 
+# Ojo: estamos en backend.app.api → subir dos niveles: backend
 from ..infra.db import get_db
 from ..core.models import Event
 from ..schemas import ExecuteIn
@@ -16,7 +17,6 @@ def execute(body: ExecuteIn, db: Session = Depends(get_db)) -> Dict[str, Any]:
     Endpoint del execute: delega toda la lógica en ExecutionService
     y registra el evento.
     """
-
     result = run_code_sandboxed(body.code)
 
     # --- guardar evento ---

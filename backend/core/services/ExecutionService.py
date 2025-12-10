@@ -38,6 +38,15 @@ def run_code_sandboxed(code: str) -> Dict[str, Any]:
         "min": min,
         "max": max,
         "sum": sum,
+        
+         # 👇 añade excepciones comunes
+        "Exception": Exception,
+        "ValueError": ValueError,
+        "TypeError": TypeError,
+        "IndexError": IndexError,
+        "KeyError": KeyError,
+        "ZeroDivisionError": ZeroDivisionError,
+        "NameError": NameError,        # opcional, por si la refieres
     }
     g = {"__builtins__": allowed_builtins}
     l: Dict[str, Any] = {}

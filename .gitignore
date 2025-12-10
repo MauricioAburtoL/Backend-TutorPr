@@ -1,0 +1,47 @@
+# --- Python / FastAPI ---
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+.eggs/
+.cache/
+
+# Virtualenvs
+.venv/
+venv/
+env/
+
+# Herramientas / tests
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# IDE / SO
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs / builds
+*.log
+build/
+dist/
+
+# (Si llegas a tener npm dentro del backend)
+node_modules/
+
+# 🔒 Bases de datos locales que NO queremos subir
+events.db
+
+# (Opcional: si quieres ignorar cualquier SQLite local, descomenta)
+# *.sqlite
+# *.sqlite3
+
+# Variables de entorno locales (si las usas)
+.env
+.env.*

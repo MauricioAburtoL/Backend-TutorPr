@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from ..infra.db import engine, Base
 
 # Routers de la capa API
-from ..api import execute, hint, cfg, kpis, events
+from ..api import execute, hint, cfg, kpis #events
 
 
 app = FastAPI(title="Edu Assistant API", version="0.3.0")
@@ -27,7 +27,7 @@ app.include_router(execute.router, prefix="/api", tags=["execute"])
 app.include_router(hint.router,    prefix="/api", tags=["hint"])
 app.include_router(cfg.router,     prefix="/api", tags=["cfg"])
 app.include_router(kpis.router,    prefix="/api/kpis", tags=["kpis"])
-app.include_router(events.router,  prefix="/api", tags=["events"])
+# app.include_router(events.router,  prefix="/api", tags=["events"])
 
 
 @app.get("/health")

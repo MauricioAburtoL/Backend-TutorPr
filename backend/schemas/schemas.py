@@ -1,5 +1,9 @@
-from pydantic import BaseModel
-from typing import Optional, List, Dict, Any
+# backend/schemas/schemas.py
+from typing import Optional, Literal, List, Tuple, Dict, Any
+from pydantic import BaseModel, Field
+
+# Alias para el lenguaje
+Lang = Literal["python", "java", "cpp"]
 
 class ExecuteIn(BaseModel):
     user_id: str
@@ -21,20 +25,25 @@ class HintIn(BaseModel):
     exercise_id: str
     attempt_id: str
     code: str
-    exec_result: ExecResult
+    exec_result: Optional[ExecResult] = None
+    lang: Optional[Lang] = "python"   # usa el alias
 
 class HintOut(BaseModel):
     hint: str
     pattern_id: str
-    concept: str
-    detector: str = "rules"
-    confidence: float = 1.0
+    concept: str = ""
+
+# Para /api/cfg con lang en el body (si lo usas)
+class CodeIn(BaseModel):
+    code: str
+    lang: Lang = "python"              # <-- corrige esto
+
+# Para /api/cfg/{lang} con body { code }
+class CodeOnly(BaseModel):
+    code: str
 
 class CFGOut(BaseModel):
     language: str
-    mermaid: str
-    nodes: List[Dict[str, Any]]
-    
-class CodeIn(BaseModel):
-    lang: str
-    code: str
+    nodes: List[Dict[str, Any]] = Field(default_factory=list)
+    edges: List[Tuple[str, str]] = Field(default_factory=list)
+    mermaid: Optional[str] = None
