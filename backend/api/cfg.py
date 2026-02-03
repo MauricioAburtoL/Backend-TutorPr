@@ -2,7 +2,7 @@
 from fastapi import APIRouter, HTTPException
 
 # Schemas y core según la nueva estructura
-from ..schemas.schemas import CFGOut, CodeIn, CodeOnly, Lang
+from ..schemas import CFGOut, CodeIn, CodeOnly, Lang
 from ..core.cfg import build_cfg_any
 
 router = APIRouter()

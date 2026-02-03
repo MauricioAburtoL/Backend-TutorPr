@@ -32,6 +32,7 @@ def execute(body: ExecuteIn, db: Session = Depends(get_db)) -> Dict[str, Any]:
             "status": result["status"],
             "stdout": result["stdout"],
             "stderr": result["stderr"],
+            "duration_ms": body.duration_ms,
             "error_type": result["error_type"],
         },
     )

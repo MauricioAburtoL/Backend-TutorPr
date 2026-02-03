@@ -7,7 +7,7 @@ from ..infra.db import get_db
 from ..core.services.TutoringService import TutoringService
 
 # Si tus Pydantic siguen en backend/schemas/schemas.py:
-from ..schemas.schemas import HintIn, HintOut
+from ..schemas import HintIn, HintOut
 
 # Si tu modelo Event quedó en core/models.py:
 from ..core.models import Event
