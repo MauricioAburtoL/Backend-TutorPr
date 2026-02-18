@@ -20,9 +20,26 @@ def _py_detect_from_signals(signals: Dict[str, Any]) -> DetectionResult:
     """Detecciones para Python basadas en stderr/status."""
     stderr = signals.get("stderr", "") or ""
     status = signals.get("status", "ok")
+    stdout = str(signals.get("stdout", "")).strip()
+    expected = str(signals.get("expected_output", "")).strip()
 
     if status == "ok":
-        return DetectionResult("correct", "", "Tu solución es correcta.")
+            # VALIDACIÓN RIGUROSA:
+            if expected and stdout != expected:
+                return DetectionResult(
+                    pattern_id="wrong_output",
+                    concept="Lógica de salida",
+                    hint=f"Tu código no dio error, pero no imprimió lo esperado. Se esperaba '{expected}' y recibí '{stdout}'."
+                )
+            # Si el código está vacío (solo comentarios) el stdout será ""
+            if not stdout and expected:
+                return DetectionResult(
+                    pattern_id="no_output",
+                    concept="Salida vacía",
+                    hint="¡Tu código corre, pero no produce ninguna salida! Asegúrate de usar print()."
+                )
+
+            return DetectionResult("correct", "", "¡Excelente trabajo! Tu solución es correcta.")
 
     if status == "error":
         # NameError -> distinguir builtin, typo y nombre inexistente

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, Text, JSON, TIMESTAMP, Float, Index, String, ForeignKey
+from sqlalchemy import Boolean, Column, Integer, Text, JSON, TIMESTAMP, Float, Index, String, ForeignKey
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 
@@ -80,3 +80,11 @@ class UserStats(Base):
     weak_areas = Column(JSON)       # ['Ciclos While']
     strong_areas = Column(JSON)     # ['Print']
     recommendations = Column(JSON)  # List[RecommendationSchema]
+    
+class TestCase(Base):
+    __tablename__ = "test_cases"
+    id = Column(Integer, primary_key=True, index=True)
+    exercise_id = Column(String, ForeignKey("exercises.id"))
+    input_data = Column(String, nullable=True)  # Lo que se le envía al stdin
+    expected_output = Column(String)            # Lo que se espera en el stdout
+    is_hidden = Column(Boolean, default=False)  # Si el alumno puede ver este caso

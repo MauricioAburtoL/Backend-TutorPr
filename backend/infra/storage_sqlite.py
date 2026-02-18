@@ -47,6 +47,15 @@ class StorageSQLite:
             .limit(limit)
             .all()
         )
+    def get_test_cases(self, exercise_id: str):
+        """Consulta los casos de prueba asociados a un ejercicio específico."""
+        from ..core.models import TestCase
+        return self.db.query(TestCase).filter(TestCase.exercise_id == exercise_id).all()
+
+    def get_exercise_by_id(self, exercise_id: str):
+        """Consulta la tabla 'exercises' por ID."""
+        from ..core.models import Exercise # Asegúrate de importar tu modelo
+        return self.db.query(Exercise).filter(Exercise.id == exercise_id).first()
 
     def create_event(self, event_data: dict) -> Event:
         """Registra un evento de interacción (ej. ejecución de código) para telemetría."""

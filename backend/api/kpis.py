@@ -7,8 +7,6 @@ from ..infra.db import get_db
 from ..infra.storage_sqlite import StorageSQLite
 from ..core.models import Event
 from ..schemas import TopicSchema, ExerciseSchema, UserStatsSchema
-
-# ⬇️ NUEVO: Importamos el servicio para que deje de salir el error de Pylance
 from ..core.services.AnalyticsService import AnalyticsService
 
 router = APIRouter()
@@ -17,10 +15,7 @@ router = APIRouter()
 
 @router.get("/summary")
 def summary(db: Session = Depends(get_db)):
-    """
-    Calcula el porcentaje de éxito por ejercicio.
-    Útil para los 'Learning Analytics' de tu investigación.
-    """
+    """Calcula el porcentaje de éxito por ejercicio."""
     ok_ratio = (
         func.avg(
             case(
@@ -54,24 +49,30 @@ def get_exercises(topic_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Tema no encontrado")
     return exercises
 
-# --- EL CORAZÓN DE TUS ANALYTICS (Corregido) ---
+# 🌟 NUEVO ENDPOINT PARA EL PLAYGROUND 🌟
+@router.get("/exercises/{exercise_id}", response_model=ExerciseSchema)
+def get_exercise_by_id(exercise_id: str, db: Session = Depends(get_db)):
+    """
+    Recupera un ejercicio específico por su ID (ej: e1).
+    Este es el endpoint que el Playground de Angular necesita para cargar la descripción.
+    """
+    storage = StorageSQLite(db)
+    exercise = storage.get_exercise_by_id(exercise_id) # Asegúrate de que este método exista en StorageSQLite
+    
+    if not exercise:
+        raise HTTPException(status_code=404, detail=f"Ejercicio {exercise_id} no encontrado")
+    
+    return exercise
+
+# --- EL CORAZÓN DE TUS ANALYTICS ---
 
 @router.get("/user/{user_id}/stats", response_model=UserStatsSchema, response_model_by_alias=False)
 def get_user_stats(user_id: str, db: Session = Depends(get_db)):
-    """
-    Endpoint clave: Entrega el perfil de usuario procesado por el AnalyticsService.
-    """
     storage = StorageSQLite(db)
-    
-    # Verificamos primero si el usuario existe en los registros base
     stats_base = storage.get_user_stats(user_id)
     if not stats_base:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
     
-    # ⬇️ USAMOS EL SERVICIO: Aquí es donde ocurre el cálculo de comportamiento
     service = AnalyticsService(storage)
-    
-    # Llamamos al nuevo método que integra KPIs + Comportamiento
     profile = service.get_structured_profile(user_id)
-    
     return profile

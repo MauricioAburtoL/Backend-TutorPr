@@ -3,8 +3,10 @@ from backend.infra.db import SessionLocal, engine, Base
 from backend.core import models
 
 def seed_data():
+    # Crea las tablas si no existen
     Base.metadata.create_all(bind=engine) 
     db = SessionLocal()
+    
     try:
         # 1. TEMAS COMPLETOS (Topics)
         topics_data = [
@@ -37,79 +39,58 @@ def seed_data():
                 "total_exercises": 8,
                 "tags": ["For", "While", "Range", "Iteradores"],
                 "estimated_time": "3h 00m"
-            },
-            {
-                "id": "funciones",
-                "title": "Funciones y Módulos",
-                "description": "Organiza tu código en bloques reutilizables.",
-                "icon": "🧩",
-                "category": "Estructuras",
-                "total_exercises": 6,
-                "tags": ["Def", "Return", "Scope", "Parámetros"],
-                "estimated_time": "4h 00m"
             }
         ]
 
         # 2. EJERCICIOS COMPLETOS (Exercises)
         exercises_data = [
-            # Intro Python
             {"id": "e1", "topic_id": "intro-python", "title": "Hola Mundo", "description": "Imprime tu primer mensaje en consola.", "difficulty": "Fácil"},
             {"id": "e2", "topic_id": "intro-python", "title": "Variables Numéricas", "description": "Crea variables y suma dos números.", "difficulty": "Fácil"},
-            # Control de Flujo
-            {"id": "e3", "topic_id": "control-flujo", "title": "Es mayor de edad", "description": "Usa if/else para verificar una edad.", "difficulty": "Fácil"},
-            {"id": "e4", "topic_id": "control-flujo", "title": "Calculadora de Descuentos", "description": "Aplica descuentos según el monto de compra.", "difficulty": "Medio"},
-            {"id": "e5", "topic_id": "control-flujo", "title": "El semáforo", "description": "Decide qué hacer según el color.", "difficulty": "Fácil"},
-            # Ciclos
-            {"id": "e6", "topic_id": "ciclos", "title": "Contador del 1 al 10", "description": "Usa un ciclo for básico.", "difficulty": "Fácil"}
+            {"id": "e3", "topic_id": "control-flujo", "title": "Es mayor de edad", "description": "Usa if/else para verificar una edad.", "difficulty": "Fácil"}
         ]
 
-        # 3. PERFIL DE USUARIO DETALLADO (UserStats)
-        user_id = "student_01"
-        user_exists = db.query(models.UserStats).filter(models.UserStats.user_id == user_id).first()
-        
-        if not user_exists:
-            initial_user = models.UserStats(
-                user_id=user_id,
-                username="Estudiante",
-                level="Explorador de Python 🐍",
-                exercises_completed=12,
-                study_streak=3,
-                total_hours=5.5,
-                skills=[
-                    {"name": "Lógica", "progress": 75},
-                    {"name": "Sintaxis", "progress": 40},
-                    {"name": "Depuración", "progress": 20},
-                    {"name": "Algoritmos", "progress": 10}
-                ],
-                last_accessed={
-                    "exerciseId": "e3",
-                    "title": "Es mayor de edad",
-                    "topicName": "Control de Flujo",
-                    "progress": 50
-                },
-                daily_tip='💡 Tip: Usa "elif" cuando tengas múltiples condiciones encadenadas para ahorrar líneas de código.',
-                mastery_score=45,
-                weak_areas=['Bucles Anidados', 'Condicionales Compuestos'],
-                strong_areas=['Declaración de Variables', 'Salida de Datos (Print)'],
-                recommendations=[
-                    {"title": 'Repasar la teoría de "Ciclos y Bucles"', "type": 'review', "link": '/topics'},
-                    {"title": 'Resolver: "El semáforo" (Control de Flujo)', "type": 'practice', "link": '/solve/e5'}
-                ]
-            )
-            db.add(initial_user)
+        # 4. CASOS DE PRUEBA (Test Cases)
+        test_cases_data = [
+            {"exercise_id": "e1", "input_data": None, "expected_output": "Hola Mundo", "is_hidden": False},
+            {"exercise_id": "e2", "input_data": None, "expected_output": "15", "is_hidden": False},
+            {"exercise_id": "e3", "input_data": "15", "expected_output": "Eres menor de edad", "is_hidden": False},
+            {"exercise_id": "e3", "input_data": "20", "expected_output": "Eres mayor de edad", "is_hidden": True}
+        ]
 
-        # Inserción de Temas
+        # --- PROCESO DE ACTUALIZACIÓN (UPSERT) ---
+
+        # Actualización de Temas
         for t in topics_data:
-            if not db.query(models.Topic).filter(models.Topic.id == t["id"]).first():
+            existing_topic = db.query(models.Topic).filter(models.Topic.id == t["id"]).first()
+            if existing_topic:
+                for key, value in t.items():
+                    setattr(existing_topic, key, value)
+            else:
                 db.add(models.Topic(**t))
 
-        # Inserción de Ejercicios
+        # Actualización de Ejercicios
         for e in exercises_data:
-            if not db.query(models.Exercise).filter(models.Exercise.id == e["id"]).first():
+            existing_exercise = db.query(models.Exercise).filter(models.Exercise.id == e["id"]).first()
+            if existing_exercise:
+                for key, value in e.items():
+                    setattr(existing_exercise, key, value)
+            else:
                 db.add(models.Exercise(**e))
 
+        # Actualización de Casos de Prueba
+        for tc in test_cases_data:
+            existing_tc = db.query(models.TestCase).filter(
+                models.TestCase.exercise_id == tc["exercise_id"],
+                models.TestCase.input_data == tc["input_data"]
+            ).first()
+            if existing_tc:
+                existing_tc.expected_output = tc["expected_output"]
+                existing_tc.is_hidden = tc["is_hidden"]
+            else:
+                db.add(models.TestCase(**tc))
+
         db.commit()
-        print("✅ Base de datos poblada con éxito con todos los datos de Angular.")
+        print("✅ Base de datos ACTUALIZADA con éxito.")
 
     except Exception as e:
         print(f"❌ Error al poblar la base de datos: {e}")
