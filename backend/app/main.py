@@ -1,12 +1,15 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from dotenv import load_dotenv
+
+load_dotenv()
 from backend.infra.db import init_db
 
 # Infra (base de datos)
 from backend.infra.db import engine, Base
 
 # Routers de la capa API
-from backend.api import execute, hint, cfg, kpis #events
+from backend.api import execute, hint, cfg, kpis, assist #events
 
 
 app = FastAPI(
@@ -37,6 +40,7 @@ app.include_router(execute.router, prefix="/api", tags=["Execution Service"])
 app.include_router(hint.router,    prefix="/api", tags=["Tutor Agent / Hints"])
 app.include_router(cfg.router,     prefix="/api", tags=["Static Analysis (CFG)"])
 app.include_router(kpis.router,    prefix="/api/kpis", tags=["Learning Analytics"])
+app.include_router(assist.router,  prefix="/api", tags=["Gemini AI Assistant"])
 
 @app.get("/health")
 def health():
