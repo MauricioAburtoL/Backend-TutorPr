@@ -32,27 +32,16 @@ class CodeOnly(BaseModel):
     
 class CFGOut(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
-    language: str #
-    nodes: List[Dict[str, Any]] = Field(default_factory=list) #
-    edges: List[Tuple[str, str]] = Field(default_factory=list) #
-    mermaid: Optional[str] = None #
-    
-# backend/schemas/executionSchemas.py
+    language: str
+    nodes: List[Dict[str, Any]] = Field(default_factory=list)
+    edges: List[Tuple[str, str]] = Field(default_factory=list)
+    mermaid: Optional[str] = None
+    source: str = "ast"  # "ast" | "gemini"
 
-class HintIn(BaseModel):
-    model_config = ConfigDict(populate_by_name=True, extra='allow') # 👈 Esto permite recibir 'user_id' o 'userId'
-    
-    userId: str = Field(alias="user_id")
-    sessionId: str = Field(alias="session_id")
-    exerciseId: str = Field(alias="exercise_id")
-    attemptId: str = Field(alias="attempt_id")
+class CFGRequest(BaseModel):
+    """Extiende CodeIn con contexto de usuario para buscar en cache de Gemini."""
+    model_config = ConfigDict(populate_by_name=True)
     code: str
-    lang: Optional[str] = "python"
-    
-    # Asegúrate de que este alias coincida con lo que envía Angular
-    exec_result: Optional[Any] = Field(default_factory=dict)
-
-class HintOut(BaseModel):
-    hint: str 
-    pattern_id: Optional[str] = "unknown"
-    concept: Optional[str] = ""
+    lang: Lang = "python"
+    userId: Optional[str] = Field(default=None, alias="user_id")
+    exerciseId: Optional[str] = Field(default=None, alias="exercise_id")

@@ -53,25 +53,27 @@ class GeminiTutoringService:
 
     def _build_prompt(self, request: AssistRequest) -> str:
         return f"""
-        Act as a programming tutor. Analyze the following code based on the context provided.
-        
-        Context: {request.context}
-        Language: {request.language}
-        Student Code:
+        Actua como un tutor de programacion. Analiza el siguiente codigo segun el contexto proporcionado.
+        IMPORTANTE: Todas tus respuestas deben estar en ESPAÑOL.
+
+        Contexto: {request.context}
+        Lenguaje: {request.language}
+        Codigo del estudiante:
         {request.studentCode}
-        
-        You MUST return a VALID JSON object with the following structure:
+
+        Debes retornar un objeto JSON VALIDO con la siguiente estructura:
         {{
           "status": "error" | "success" | "warning",
-          "pedagogical_feedback": "Socratic guidance text...",
-          "technical_hints": ["Hint 1", "Hint 2"],
-          "detected_errors": [{{"line": <int>, "type": "logic|syntax", "desc": "description"}}],
+          "pedagogical_feedback": "Guia socratica en español...",
+          "technical_hints": ["Pista 1 en español", "Pista 2 en español"],
+          "detected_errors": [{{"line": <int>, "type": "logic|syntax", "desc": "descripcion en español"}}],
           "mermaid_chart": "graph TD; ...",
-          "next_step_question": "What would happen if...?"
+          "next_step_question": "Pregunta en español para guiar al estudiante..."
         }}
-        
-        Provide pedagogical feedback that guides the student rather than giving the answer.
-        Ensure 'mermaid_chart' is a valid Mermaid JS string for a flowchart representing the code logic.
+
+        Proporciona retroalimentacion pedagogica que guie al estudiante sin darle la respuesta directa.
+        Asegurate de que 'mermaid_chart' sea un string valido de Mermaid JS para un diagrama de flujo que represente la logica del codigo.
+        Todos los textos en los campos JSON deben estar en ESPAÑOL.
         """
 
     def _create_error_response(self, error_msg: str) -> AssistResponse:

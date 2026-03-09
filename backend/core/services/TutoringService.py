@@ -1,6 +1,6 @@
 # backend/app/core/services/TutoringService.py
 import re # Necesario para limpiar comentarios
-from typing import Any, Dict
+from typing import Any, Dict, List
 from ..pipeline import run_detection_pipeline
 
 class TutoringService:
@@ -23,7 +23,8 @@ class TutoringService:
         self,
         code: str,
         exec_result: Dict[str, Any] | None,
-        lang: str = "python"
+        lang: str = "python",
+        test_cases: List[Any] | None = None
     ) -> Dict[str, str]:
 
         exec_result = exec_result or {}
@@ -38,7 +39,7 @@ class TutoringService:
             }
 
         # Si pasa la validación, corre el pipeline normal
-        detection = run_detection_pipeline(code, exec_result, lang=lang)
+        detection = run_detection_pipeline(code, exec_result, test_cases=test_cases or [], lang=lang)
 
         # Doble check: si el pipeline dice 'correct' pero no hubo salida real
         if detection.pattern_id == "correct" and not exec_result.get("stdout"):
