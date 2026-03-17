@@ -72,7 +72,41 @@ class GeminiTutoringService:
         }}
 
         Proporciona retroalimentacion pedagogica que guie al estudiante sin darle la respuesta directa.
-        Asegurate de que 'mermaid_chart' sea un string valido de Mermaid JS para un diagrama de flujo que represente la logica del codigo.
+
+        Genera el campo 'mermaid_chart' siguiendo estas reglas OBLIGATORIAS para evitar errores de parseo:
+
+        REGLAS DE SINTAXIS MERMAID:
+        1. Usa siempre "graph TD" como encabezado (sin punto y coma al final).
+        2. Todo texto de nodo que contenga parentesis (), guiones bajos dobles __, punto y coma ; o acentos/tildes DEBE escribirse entre corchetes con comillas dobles: ["texto aqui"]. Ejemplo: A["__init__(self, lado)"]
+        3. NUNCA uses llaves {{}} para labels con caracteres especiales — usa corchetes [] con comillas dobles.
+        4. NUNCA pongas ; dentro del texto de un nodo.
+        5. Los IDs de nodos solo deben contener letras, numeros y guiones bajos (sin espacios).
+
+        REGLAS PARA CODIGO CON CLASES:
+        6. Cuando el codigo defina una clase, encierra su estructura en un subgraph con este formato exacto:
+           subgraph NombreClase["Clase NombreClase"]
+             direction TB
+             init_m["__init__(self, ...)"]
+             metodo1["nombre_metodo()"]
+           end
+        7. El programa principal debe referenciar los nodos del subgraph con flechas.
+
+        EJEMPLO VALIDO para una clase con programa principal:
+        graph TD
+          subgraph Cuadrado["Clase Cuadrado"]
+            direction TB
+            init_m["__init__(self, lado)"]
+            area_m["area()"]
+            perim_m["perimetro()"]
+          end
+          A[Inicio] --> B["c1 = Cuadrado(5)"]
+          B --> init_m
+          B --> C["c1.area()"]
+          C --> area_m
+          C --> D["c1.perimetro()"]
+          D --> perim_m
+          D --> E[Fin]
+
         Todos los textos en los campos JSON deben estar en ESPAÑOL.
         """
 

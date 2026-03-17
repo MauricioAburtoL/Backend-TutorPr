@@ -1,49 +1,145 @@
 # backend/app/core/services/ExecutionService.py
+import ast
 import io
 import contextlib
 import time
 import traceback
+import builtins
 from typing import Any, Dict, List
+
+# ---------------------------------------------------------------------------
+# Configuración del sandbox
+# ---------------------------------------------------------------------------
+
+# Módulos seguros para ejercicios de aula
+_ALLOWED_MODULES = {"random", "math", "statistics", "decimal", "fractions"}
+
+# Atributos dunder que permiten escalar privilegios fuera del sandbox.
+# NOTA: __init__, __str__, __repr__, __len__, etc. NO están aquí → son permitidos.
+_DANGEROUS_ATTRS = {
+    "__class__", "__bases__", "__mro__", "__subclasses__",
+    "__globals__", "__locals__", "__code__", "__builtins__",
+    "__import__", "__reduce__", "__reduce_ex__",
+}
+
+# Llamadas a funciones built-in peligrosas
+_DANGEROUS_CALLS = {"eval", "exec", "open", "compile", "__import__"}
+
+
+def _ast_check(code: str) -> str | None:
+    """
+    Analiza el AST del código para detectar patrones peligrosos.
+    Retorna un mensaje de error descriptivo o None si el código es seguro.
+    Usa el árbol sintáctico en lugar de comparación de substrings, por lo que
+    puede distinguir __init__ (seguro) de __class__ (peligroso).
+    """
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return None  # El error de sintaxis lo maneja exec() más adelante
+
+    for node in ast.walk(tree):
+
+        # -- Imports: solo permitir módulos de la whitelist --
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                module = alias.name.split(".")[0]
+                if module not in _ALLOWED_MODULES:
+                    return f"Módulo no permitido: '{module}'"
+
+        elif isinstance(node, ast.ImportFrom):
+            module = (node.module or "").split(".")[0]
+            if module not in _ALLOWED_MODULES:
+                return f"Módulo no permitido: '{module}'"
+
+        # -- Acceso a atributos peligrosos (.e.g __class__, __mro__) --
+        elif isinstance(node, ast.Attribute):
+            if node.attr in _DANGEROUS_ATTRS:
+                return f"Acceso no permitido: '{node.attr}'"
+
+        # -- Llamadas directas a funciones peligrosas --
+        elif isinstance(node, ast.Call):
+            if isinstance(node.func, ast.Name) and node.func.id in _DANGEROUS_CALLS:
+                return f"Función no permitida: '{node.func.id}'"
+
+    return None
+
+
+def _make_restricted_import(allowed: set):
+    """
+    Crea un __import__ restringido que solo permite importar módulos de la whitelist.
+    Se inyecta en los builtins del exec para que 'import random' funcione
+    pero 'import os' falle en tiempo de ejecución (doble protección tras el AST check).
+    """
+    _real_import = builtins.__import__
+
+    def _restricted_import(name, *args, **kwargs):
+        base = name.split(".")[0]
+        if base not in allowed:
+            raise ImportError(f"Módulo no permitido: '{name}'")
+        return _real_import(name, *args, **kwargs)
+
+    return _restricted_import
+
+
+# ---------------------------------------------------------------------------
+# Sandbox principal
+# ---------------------------------------------------------------------------
 
 def run_code_sandboxed(code: str) -> Dict[str, Any]:
     """
-    Ejecuta el código del estudiante en un entorno controlado (sandbox)
-    para capturar stdout, stderr y posibles errores.
+    Ejecuta el código del estudiante en un entorno controlado (sandbox).
+    1. Valida el AST para detectar patrones peligrosos (imports, attrs, calls).
+    2. Ejecuta con builtins restringidos y __import__ personalizado.
     """
-    status = "ok"
-    stdout = ""
-    stderr = ""
-    error_type = None
 
-    # 1) Bloqueos anti-abuso (Seguridad básica)
-    banned = ["import", "__", "open(", "os.", "sys.", "subprocess", "eval(", "exec("]
-    if any(b in code for b in banned):
+    # 1) Análisis estático del AST
+    error_msg = _ast_check(code)
+    if error_msg:
         return {
             "status": "error",
             "stdout": "",
-            "stderr": "Operación no permitida por el sandbox",
+            "stderr": error_msg,
             "error_type": "SandboxError",
             "runtime_ms": None,
         }
 
-    # 2) Builtins permitidos para el aprendizaje de programación
+    # 2) Builtins permitidos para ejercicios de programación
     allowed_builtins = {
+        # I/O
         "print": print,
+        "input": input,
+        # Secuencias y colecciones
         "range": range,
         "len": len,
         "enumerate": enumerate,
         "list": list,
+        "dict": dict,
+        "set": set,
+        "tuple": tuple,
+        # Tipos
         "int": int,
         "float": float,
         "str": str,
         "bool": bool,
+        # Matemáticas básicas
         "abs": abs,
         "min": min,
         "max": max,
         "sum": sum,
-        "input": input, # Se añade para futuros ejercicios con entrada
-        
-        # Excepciones comunes para manejo de errores en el código del alumno
+        "round": round,
+        "pow": pow,
+        "divmod": divmod,
+        # Utilidades
+        "sorted": sorted,
+        "reversed": reversed,
+        "zip": zip,
+        "map": map,
+        "filter": filter,
+        "isinstance": isinstance,
+        "issubclass": issubclass,
+        "type": type,
+        # Excepciones comunes
         "Exception": Exception,
         "ValueError": ValueError,
         "TypeError": TypeError,
@@ -51,11 +147,22 @@ def run_code_sandboxed(code: str) -> Dict[str, Any]:
         "KeyError": KeyError,
         "ZeroDivisionError": ZeroDivisionError,
         "NameError": NameError,
+        "StopIteration": StopIteration,
+        # Import restringido (doble protección)
+        "__import__": _make_restricted_import(_ALLOWED_MODULES),
+        # Necesario para que las clases funcionen correctamente
+        "__build_class__": __build_class__,
+        "__name__": "__main__",
     }
-    
+
     g = {"__builtins__": allowed_builtins}
     l: Dict[str, Any] = {}
     buf_out, buf_err = io.StringIO(), io.StringIO()
+    status = "ok"
+    stdout = ""
+    stderr = ""
+    error_type = None
+    runtime_ms = None
 
     try:
         start_time = time.perf_counter()
@@ -81,25 +188,27 @@ def run_code_sandboxed(code: str) -> Dict[str, Any]:
         "runtime_ms": runtime_ms,
     }
 
+
+# ---------------------------------------------------------------------------
+# Validación pedagógica
+# ---------------------------------------------------------------------------
+
 def validate_logic(actual_output: str, test_cases: List[Any]) -> Dict[str, Any]:
     """
     Compara la salida obtenida del sandbox contra los casos de prueba definidos.
-    Aplica una heurística de robustez limpiando espacios y saltos de línea.
+    Aplica normalización de espacios y saltos de línea.
     """
     if not test_cases:
         return {"is_correct": True, "failed_case": None}
 
     for case in test_cases:
-        # Limpieza de strings para permitir flexibilidad al usuario (Heurística de Nielsen #2)
-        # Se eliminan espacios en blanco al inicio/final y se normalizan saltos de línea
         clean_actual = actual_output.strip()
         clean_expected = case.expected_output.strip()
-        
-        # Validación: Si no coinciden, el ejercicio no se marca como completado
+
         if clean_actual != clean_expected:
             return {
-                "is_correct": False, 
+                "is_correct": False,
                 "failed_case": clean_expected if not case.is_hidden else "Oculto"
             }
-                
+
     return {"is_correct": True, "failed_case": None}

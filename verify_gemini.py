@@ -24,9 +24,54 @@ def test_gemini_service():
     
     # Create a mock request
     request = AssistRequest(
-        context="Ejercicio: Crear un bucle que sume números del 1 al 10.",
+        context="#Escribir una clase para almacenar un número entero con los siguientes métodos: Validar si el número es de 4 dígitos Determinar el dígito de las unidades Determinar la suma de sus dígitos",
         language="Python",
-        student_code="sum = 0\nfor i in range(10):\nsum = i"
+        student_code="""class Numero:
+    num = 0
+    
+    def __init__(self, n):
+        self.num = n
+
+    def validar(self):
+        if self.num >999 and num <10000:
+            print("Si es de 4 dígitos")
+        else:
+            print("No es de 4 dígitos")
+
+    def digitoUnidad(self):
+        unidad = self.num %10
+        print("El dígito de las unidades es: ", unidad)
+
+    def sumarDigitos(self):
+        u = self.num %10
+        queda = self.num // 10
+        d = queda % 10
+        queda = queda //10
+        c = queda %10
+        m = queda //10
+        suma = u + d + c + m
+        print("La suma es: ", suma)
+
+    def ejemplo(self):
+        x = self.num
+        resp = 1
+        while x >0:
+            print(x)
+            resp = resp * x
+            x = x - 1
+        print("El resultado es: ", resp)
+
+#programa principal
+print("introduce un número de 4 digitos")
+num = int(input())
+
+n1 = Numero(num)
+n1.validar()
+n1.digitoUnidad()
+n1.sumarDigitos()
+
+n1.ejemplo()
+"""
     )
     
     # Handle Pydantic V1 vs V2
