@@ -54,7 +54,9 @@ class Exercise(Base):
     title = Column(String, nullable=False)
     description = Column(Text)
     difficulty = Column(String)    # 'Fácil' | 'Medio' | 'Difícil'
-    
+    base_code = Column(Text, default="")   # Codigo plantilla inicial
+    order = Column(Integer, default=0)     # Orden dentro del topic
+
     topic = relationship("Topic", back_populates="exercises")
 
 class UserStats(Base):

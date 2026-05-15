@@ -9,6 +9,8 @@ class ExerciseSchema(BaseModel):
     title: str #
     description: str #
     difficulty: Literal['Fácil', 'Medio', 'Difícil'] #
+    baseCode: str = Field(default="", alias="base_code") #
+    order: int = Field(default=0) #
     completed: bool = False #
 
 class TopicSchema(BaseModel):

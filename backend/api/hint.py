@@ -10,6 +10,7 @@ from ..core.services.TutoringService import TutoringService
 from ..core.services.gemini_orchestrator import get_or_fetch
 from ..schemas import HintIn, HintOut
 from ..core.models import Event, Exercise, TestCase
+from ..adapters.python.detectors_py import analyze_syntax
 
 router = APIRouter()
 rule_service = TutoringService()
@@ -49,51 +50,57 @@ def _extract_real_errors(stderr: str) -> List[Dict[str, Any]]:
     return errors
 
 
-def _merge_errors(
+def _merge_all_errors(
     gemini_errors: List[Dict[str, Any]],
     real_errors: List[Dict[str, Any]],
+    static_errors: List[Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
     """
-    Combina errores de Gemini con los reales de Python.
-    - Los errores reales de Python tienen prioridad en numeros de linea.
-    - Los errores de Gemini aportan descripciones pedagogicas.
-    - Si Gemini y Python reportan el mismo tipo de error, usa la linea de Python
-      con la descripcion de Gemini (mas pedagogica).
+    Merge de 3 fuentes de errores:
+    1. real_errors (stderr) — lineas exactas de runtime
+    2. static_errors (compilador) — multiples errores de sintaxis
+    3. gemini_errors — descripciones pedagogicas + errores logicos
+
+    Prioridad: stderr > static > Gemini para lineas.
+    Gemini aporta descripciones pedagogicas y errores logicos unicos.
     """
-    if not real_errors:
-        return gemini_errors
-    if not gemini_errors:
-        return real_errors
+    # 1. Combinar stderr + static (ambos son Python puro)
+    python_errors: Dict[int, Dict[str, Any]] = {}
+    for err in real_errors:
+        python_errors[err["line"]] = err
+    for err in static_errors:
+        if err["line"] not in python_errors:
+            python_errors[err["line"]] = err
 
-    real_lines = {e["line"] for e in real_errors}
-    real_types = {e["type"] for e in real_errors}
-
-    merged = []
-
-    # 1. Para cada error real, buscar descripcion pedagogica de Gemini del mismo tipo
-    for real_err in real_errors:
-        # Buscar un error de Gemini del mismo tipo para usar su descripcion
-        gemini_match = next(
-            (g for g in gemini_errors if g.get("type") == real_err["type"]),
-            None,
-        )
-        if gemini_match:
-            merged.append({
-                "line": real_err["line"],  # linea real de Python
-                "type": real_err["type"],
-                "desc": gemini_match.get("desc", real_err["desc"]),  # desc pedagogica de Gemini
-            })
-        else:
-            merged.append(real_err)
-
-    # 2. Agregar errores de Gemini que no esten en lineas ya cubiertas
-    #    (errores logicos que Python no detecta)
+    # 2. Indexar errores de Gemini por linea para buscar descripciones pedagogicas
+    gemini_by_line: Dict[int, Dict[str, Any]] = {}
     for g_err in gemini_errors:
         g_line = g_err.get("line", 0)
-        if g_line not in real_lines and g_err.get("type") == "logic":
+        if g_line > 0:
+            gemini_by_line[g_line] = g_err
+
+    # 3. Para cada error de Python, usar descripcion de Gemini si la tiene (mas pedagogica)
+    merged = []
+    for line_num in sorted(python_errors.keys()):
+        py_err = python_errors[line_num]
+        gemini_match = gemini_by_line.get(line_num)
+        if gemini_match and gemini_match.get("desc"):
+            merged.append({
+                "line": py_err["line"],
+                "type": py_err["type"],
+                "desc": gemini_match["desc"],
+            })
+        else:
+            merged.append(py_err)
+
+    # 4. Agregar errores logicos de Gemini que no estan en lineas ya cubiertas
+    covered_lines = {e["line"] for e in merged}
+    for g_err in gemini_errors:
+        g_line = g_err.get("line", 0)
+        if g_line not in covered_lines and g_err.get("type") == "logic":
             merged.append(g_err)
 
-    return merged
+    return sorted(merged, key=lambda e: e["line"])
 
 
 @router.post("/hint", response_model=HintOut)
@@ -116,7 +123,10 @@ def hint(body: HintIn, db: Session = Depends(get_db)):
     exercise_context = f"{exercise.title}: {exercise.description}" if exercise else f"Exercise {body.exerciseId}"
     test_cases = db.query(TestCase).filter(TestCase.exercise_id == body.exerciseId).all()
 
-    # 3. Intentar obtener respuesta de Gemini (cache o nueva llamada)
+    # 3. Analisis estatico ANTES de Gemini (detecta multiples errores de sintaxis)
+    static_errors = analyze_syntax(body.code)
+
+    # 4. Intentar obtener respuesta de Gemini (cache o nueva llamada)
     try:
         entry = get_or_fetch(
             user_id=body.userId,
@@ -124,6 +134,7 @@ def hint(body: HintIn, db: Session = Depends(get_db)):
             code=body.code,
             language=(body.lang or "python").lower(),
             context=exercise_context,
+            static_errors=static_errors,
         )
 
         # 3. Solo caer al fallback si Gemini tuvo un fallo de sistema real
@@ -149,10 +160,9 @@ def hint(body: HintIn, db: Session = Depends(get_db)):
             else:
                 gemini_errors.append({"line": err.line, "type": err.type, "desc": err.desc})
 
-        # 5b. Extraer errores reales del stderr y combinar con Gemini
-        #     Python tiene lineas exactas; Gemini tiene descripciones pedagogicas
+        # 5b. Extraer errores reales del stderr y combinar las 3 fuentes
         real_errors = _extract_real_errors(exec_data.get("stderr", ""))
-        errors_list = _merge_errors(gemini_errors, real_errors)
+        errors_list = _merge_all_errors(gemini_errors, real_errors, static_errors)
 
         # 6. Telemetria
         try:
@@ -187,6 +197,10 @@ def hint(body: HintIn, db: Session = Depends(get_db)):
         # 7. FALLBACK: pistas basadas en reglas (sistema original)
         d = rule_service.make_hint(body.code, exec_data, lang=(body.lang or "python").lower(), test_cases=test_cases)
 
+        # Aun sin Gemini, el analisis estatico + stderr dan lineas con error
+        real_errors = _extract_real_errors(exec_data.get("stderr", ""))
+        fallback_errors = _merge_all_errors([], real_errors, static_errors)
+
         # Telemetria del fallback
         try:
             ev = Event(
@@ -212,5 +226,5 @@ def hint(body: HintIn, db: Session = Depends(get_db)):
             concept=d.get("concept", ""),
             source="rules",
             has_more_hints=False,
-            detected_errors=[],
+            detected_errors=fallback_errors,
         )

@@ -21,8 +21,8 @@ class StorageSQLite:
 
     # --- Lógica de Ejercicios (Exercises) ---
     def get_exercises_by_topic(self, topic_id: str) -> List[Exercise]:
-        """Obtiene la lista de ejercicios asociados a un tema."""
-        return self.db.query(Exercise).filter(Exercise.topic_id == topic_id).all()
+        """Obtiene la lista de ejercicios asociados a un tema, ordenados."""
+        return self.db.query(Exercise).filter(Exercise.topic_id == topic_id).order_by(Exercise.order).all()
 
     def get_exercise_by_id(self, exercise_id: str) -> Optional[Exercise]:
         """Busca un ejercicio específico."""

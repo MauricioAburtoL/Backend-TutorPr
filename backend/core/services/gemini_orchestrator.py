@@ -1,4 +1,5 @@
 # backend/core/services/gemini_orchestrator.py
+from typing import List, Dict, Any
 from backend.schemas.geminiSchemas import AssistRequest
 from backend.core.services.GeminiTutoringService import GeminiTutoringService
 from backend.core.services.gemini_cache import gemini_cache, CacheEntry
@@ -13,6 +14,7 @@ def get_or_fetch(
     code: str,
     language: str,
     context: str = "",
+    static_errors: List[Dict[str, Any]] = None,
 ) -> CacheEntry:
     """
     Retorna la respuesta cacheada de Gemini para esta combinacion user/exercise/code.
@@ -24,6 +26,7 @@ def get_or_fetch(
         code: Codigo fuente del estudiante
         language: Lenguaje de programacion (python, javascript, etc.)
         context: Contexto del ejercicio (descripcion, instrucciones)
+        static_errors: Errores detectados por analisis estatico (compilador)
 
     Returns:
         CacheEntry con la respuesta de Gemini y el estado de entrega de hints
@@ -39,7 +42,7 @@ def get_or_fetch(
         language=language,
         studentCode=code,
     )
-    response = _gemini_service.analyze_code(request)
+    response = _gemini_service.analyze_code(request, static_errors=static_errors)
 
     # 3. Guardar en cache y retornar
     entry = gemini_cache.put(user_id, exercise_id, code, response)

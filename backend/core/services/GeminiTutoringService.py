@@ -2,7 +2,7 @@
 import os
 import json
 import google.generativeai as genai
-from typing import Dict, Any
+from typing import Dict, Any, List
 from backend.schemas.geminiSchemas import AssistRequest, AssistResponse
 
 class GeminiTutoringService:
@@ -15,7 +15,7 @@ class GeminiTutoringService:
         else:
             genai.configure(api_key=self.api_key)
 
-    def analyze_code(self, request: AssistRequest) -> AssistResponse:
+    def analyze_code(self, request: AssistRequest, static_errors: List[Dict[str, Any]] = None) -> AssistResponse:
         """
         Envia el contexto y código a Gemini para obtener feedback estructurado.
         """
@@ -23,8 +23,8 @@ class GeminiTutoringService:
              return self._create_error_response("Gemini API Key missing")
 
         model = genai.GenerativeModel('gemini-2.0-flash')
-        
-        prompt = self._build_prompt(request)
+
+        prompt = self._build_prompt(request, static_errors=static_errors)
 
         try:
             # Solicitar respuesta en formato JSON
@@ -51,7 +51,22 @@ class GeminiTutoringService:
             print(f"Error calling Gemini: {msg}")
             return self._create_error_response(msg)
 
-    def _build_prompt(self, request: AssistRequest) -> str:
+    def _build_prompt(self, request: AssistRequest, static_errors: List[Dict[str, Any]] = None) -> str:
+        # Seccion de errores del compilador (si hay)
+        compiler_section = ""
+        if static_errors:
+            errors_text = "\n".join(
+                f"  - Linea {e['line']}: {e['desc']}" for e in static_errors
+            )
+            compiler_section = f"""
+        ERRORES DETECTADOS POR EL COMPILADOR DE PYTHON:
+        {errors_text}
+
+        Para cada error detectado arriba, proporciona una descripcion PEDAGOGICA en detected_errors
+        usando EXACTAMENTE los numeros de linea indicados. Explica al estudiante QUE esta mal
+        y POR QUE, sin darle la solucion directa.
+        """
+
         return f"""
         Actua como un tutor de programacion. Analiza el siguiente codigo segun el contexto proporcionado.
         IMPORTANTE: Todas tus respuestas deben estar en ESPAÑOL.
@@ -60,7 +75,7 @@ class GeminiTutoringService:
         Lenguaje: {request.language}
         Codigo del estudiante:
         {request.studentCode}
-
+        {compiler_section}
         Debes retornar un objeto JSON VALIDO con la siguiente estructura:
         {{
           "status": "error" | "success" | "warning",

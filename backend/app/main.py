@@ -46,3 +46,32 @@ app.include_router(assist.router,  prefix="/api", tags=["Gemini AI Assistant"])
 def health():
     """Endpoint de verificación de estado del backend"""
     return {"status": "online", "database": "connected"}
+
+
+
+#comandos para ejecutar 
+#windows
+# # 1) Crear y activar entorno virtual
+# python -m venv .venv
+# .\.venv\Scripts\Activate.ps1
+
+# # 2) Instalar dependencias (ajusta si tu requirements.txt tiene otras)
+# pip install -r requirements.txt
+# # Si está vacío, instala mínimo:
+# pip install "fastapi>=0.110" "uvicorn[standard]>=0.27" "SQLAlchemy>=2.0" "pydantic>=2.5"
+
+# # 3) Iniciar el servidor (puerto 8000)
+# uvicorn backend.app.main:app --reload --port 8000
+
+# IoS
+# 1) Crear y activar entorno virtual
+# python3 -m venv .venv
+# source .venv/bin/activate
+
+# # 2) Instalar dependencias
+# pip3 install -r requirements.txt
+# # Si está vacío, instala mínimo:
+# pip3 install "fastapi>=0.110" "uvicorn[standard]>=0.27" "SQLAlchemy>=2.0" "pydantic>=2.5"
+
+# # 3) Iniciar el servidor (puerto 8000)
+# python3 -m uvicorn backend.app.main:app --reload --port 8000
