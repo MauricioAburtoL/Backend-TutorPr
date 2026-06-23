@@ -67,12 +67,18 @@ class GeminiTutoringService:
         y POR QUE, sin darle la solucion directa.
         """
 
+        # Seccion de perfil del estudiante (solo hechos directos; vacia para usuario nuevo)
+        profile_section = ""
+        if getattr(request, "studentContext", ""):
+            profile_section = f"\n        {request.studentContext}\n"
+
         return f"""
         Actua como un tutor de programacion. Analiza el siguiente codigo segun el contexto proporcionado.
         IMPORTANTE: Todas tus respuestas deben estar en ESPAÑOL.
 
         Contexto: {request.context}
         Lenguaje: {request.language}
+        {profile_section}
         Codigo del estudiante:
         {request.studentCode}
         {compiler_section}

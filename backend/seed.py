@@ -1,6 +1,10 @@
 import json
+import hashlib
 from backend.infra.db import SessionLocal, engine, Base
 from backend.core import models
+
+def _hash_password(password: str) -> str:
+    return hashlib.sha256(password.encode("utf-8")).hexdigest()
 
 def seed_data():
     # Crea las tablas si no existen
@@ -507,11 +511,51 @@ def seed_data():
             else:
                 db.add(models.TestCase(**tc))
 
+        # =============================================
+        # 4. USUARIO ALUMNO (login real, sin auto-registro)
+        # =============================================
+        user_data = {
+            "user_id": "student_01",
+            "username": "alumno",
+            "password_hash": _hash_password("123"),
+            "role": "student",
+        }
+        existing_user = db.query(models.User).filter(
+            models.User.user_id == user_data["user_id"]
+        ).first()
+        if existing_user:
+            for key, value in user_data.items():
+                setattr(existing_user, key, value)
+        else:
+            db.add(models.User(**user_data))
+
+        # Perfil de aprendizaje inicial (vacio; se actualiza con el happy path)
+        existing_stats = db.query(models.UserStats).filter(
+            models.UserStats.user_id == "student_01"
+        ).first()
+        if not existing_stats:
+            db.add(models.UserStats(
+                user_id="student_01",
+                username="alumno",
+                level="Explorador de Python",
+                exercises_completed=0,
+                study_streak=0,
+                total_hours=0.0,
+                skills=[],
+                last_accessed=None,
+                daily_tip="Practica un poco cada dia para mantener tu racha.",
+                mastery_score=0,
+                weak_areas=[],
+                strong_areas=[],
+                recommendations=[],
+            ))
+
         db.commit()
         print("OK Base de datos ACTUALIZADA con exito.")
         print(f"   {len(topics_data)} temas")
         print(f"   {len(exercises_data)} ejercicios")
         print(f"   {len(test_cases_data)} casos de prueba")
+        print("   1 usuario alumno (login: alumno / 123)")
 
     except Exception as e:
         print(f"ERROR al poblar la base de datos: {e}")

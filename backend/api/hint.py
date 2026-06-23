@@ -8,6 +8,8 @@ from typing import Dict, Any, List, Optional, Tuple
 from ..infra.db import get_db
 from ..core.services.TutoringService import TutoringService
 from ..core.services.gemini_orchestrator import get_or_fetch
+from ..core.services.AnalyticsService import AnalyticsService
+from ..infra.storage_sqlite import StorageSQLite
 from ..schemas import HintIn, HintOut
 from ..core.models import Event, Exercise, TestCase
 from ..adapters.python.detectors_py import analyze_syntax
@@ -126,6 +128,15 @@ def hint(body: HintIn, db: Session = Depends(get_db)):
     # 3. Analisis estatico ANTES de Gemini (detecta multiples errores de sintaxis)
     static_errors = analyze_syntax(body.code)
 
+    # 3b. Contexto del estudiante (perfil) para personalizar la pista.
+    #     Solo hechos directos; "" para usuario nuevo (degradacion elegante).
+    try:
+        analytics = AnalyticsService(StorageSQLite(db))
+        student_context = analytics.get_prompt_context(body.userId, body.exerciseId)
+    except Exception as e:
+        print(f"Error construyendo contexto del estudiante: {e}")
+        student_context = ""
+
     # 4. Intentar obtener respuesta de Gemini (cache o nueva llamada)
     try:
         entry = get_or_fetch(
@@ -135,6 +146,7 @@ def hint(body: HintIn, db: Session = Depends(get_db)):
             language=(body.lang or "python").lower(),
             context=exercise_context,
             static_errors=static_errors,
+            student_context=student_context,
         )
 
         # 3. Solo caer al fallback si Gemini tuvo un fallo de sistema real

@@ -31,6 +31,18 @@ class Event(Base):
 
 # --- NUEVOS MODELOS PARA EL SISTEMA TUTOR ---
 
+class User(Base):
+    """
+    Credenciales de acceso. Sin auto-registro: los usuarios se siembran desde el seed.
+    El perfil de aprendizaje vive en UserStats (relacionado por user_id).
+    """
+    __tablename__ = "users"
+
+    user_id = Column(String, primary_key=True, index=True)
+    username = Column(String, unique=True, nullable=False, index=True)
+    password_hash = Column(String, nullable=False)  # sha256 (prototipo; prod: bcrypt/passlib)
+    role = Column(String, default="student")         # 'student' | 'tutor'
+
 class Topic(Base):
     __tablename__ = "topics"
     

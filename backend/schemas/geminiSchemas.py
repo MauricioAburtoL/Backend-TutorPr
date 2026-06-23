@@ -17,6 +17,7 @@ class AssistRequest(BaseSchema):
     context: str
     language: str
     studentCode: str = Field(alias="student_code")
+    studentContext: Optional[str] = Field(default="", alias="student_context")
 
 class DetectedError(BaseSchema):
     line: int

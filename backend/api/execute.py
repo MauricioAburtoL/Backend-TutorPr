@@ -9,6 +9,7 @@ from ..infra.storage_sqlite import StorageSQLite
 from ..core.models import Event
 from ..schemas import ExecuteIn
 from ..core.services.ExecutionService import run_code_sandboxed, validate_logic
+from ..core.services.ProgressService import ProgressService
 
 router = APIRouter()
 
@@ -81,6 +82,16 @@ def execute(body: ExecuteIn, db: Session = Depends(get_db)) -> Dict[str, Any]:
         db.add(feedback_event)
 
     db.commit()
+
+    # 3b. ACTUALIZACIÓN DEL PERFIL DE PROGRESO (happy path)
+    # Se ejecuta en todo intento para que las áreas débiles reflejen los fallos.
+    try:
+        ProgressService(storage).update_after_attempt(
+            body.userId, body.exerciseId, is_correct
+        )
+    except Exception as e:
+        print(f"Error actualizando progreso: {e}")
+        db.rollback()
 
     # 4. RESPUESTA AL FRONTEND
     return {

@@ -47,6 +47,47 @@ class StorageSQLite:
             .limit(limit)
             .all()
         )
+    def get_completed_exercises(self, user_id: str) -> List[dict]:
+        """
+        Ejercicios que el alumno ya resolvió correctamente (hecho observable).
+        Un ejercicio cuenta como completado si tiene al menos un evento CodeExecuted
+        con payload.is_correct == True. Devuelve id, title y topic_id.
+        """
+        events = (
+            self.db.query(Event)
+            .filter(Event.user_id == user_id, Event.event == "CodeExecuted")
+            .all()
+        )
+        completed_ids = {
+            ev.exercise_id
+            for ev in events
+            if (ev.payload or {}).get("is_correct") is True
+        }
+        if not completed_ids:
+            return []
+
+        exercises = (
+            self.db.query(Exercise)
+            .filter(Exercise.id.in_(completed_ids))
+            .all()
+        )
+        return [
+            {"id": ex.id, "title": ex.title, "topic_id": ex.topic_id}
+            for ex in exercises
+        ]
+
+    def count_attempts(self, user_id: str, exercise_id: str) -> int:
+        """Nº de ejecuciones del alumno en un ejercicio concreto (hecho directo)."""
+        return (
+            self.db.query(Event)
+            .filter(
+                Event.user_id == user_id,
+                Event.exercise_id == exercise_id,
+                Event.event == "CodeExecuted",
+            )
+            .count()
+        )
+
     def get_test_cases(self, exercise_id: str):
         """Consulta los casos de prueba asociados a un ejercicio específico."""
         from ..core.models import TestCase

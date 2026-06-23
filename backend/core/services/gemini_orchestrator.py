@@ -15,6 +15,7 @@ def get_or_fetch(
     language: str,
     context: str = "",
     static_errors: List[Dict[str, Any]] = None,
+    student_context: str = "",
 ) -> CacheEntry:
     """
     Retorna la respuesta cacheada de Gemini para esta combinacion user/exercise/code.
@@ -41,6 +42,7 @@ def get_or_fetch(
         context=context or f"Exercise {exercise_id}",
         language=language,
         studentCode=code,
+        studentContext=student_context,
     )
     response = _gemini_service.analyze_code(request, static_errors=static_errors)
 

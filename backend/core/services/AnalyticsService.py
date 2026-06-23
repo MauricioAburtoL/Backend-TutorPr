@@ -38,6 +38,51 @@ class AnalyticsService:
         return UserStatsSchema(**stats_data)
     
     
+    def get_prompt_context(self, user_id: str, exercise_id: str) -> str:
+        """
+        Construye un bloque de contexto para inyectar al prompt del tutor.
+        SOLO hechos directos y trazables (sin porcentajes ni inferencias):
+        ejercicios completados, áreas débiles/fuertes, error más frecuente y
+        nº de intentos en el ejercicio actual.
+        Devuelve "" si el alumno no tiene perfil (degradación elegante).
+        """
+        profile = self.get_structured_profile(user_id)
+        if not profile:
+            return ""
+
+        completed = self.storage.get_completed_exercises(user_id)
+        attempts = self.storage.count_attempts(user_id, exercise_id)
+
+        lines = ["PERFIL DEL ESTUDIANTE (usar para calibrar la ayuda, NO para revelar la solución):"]
+
+        if completed:
+            titles = ", ".join(f'"{c["title"]}"' for c in completed)
+            lines.append(f"- Ya completó: {titles} ({len(completed)} ejercicios)")
+
+        weak = profile.weakAreas or []
+        strong = profile.strongAreas or []
+        if weak or strong:
+            weak_txt = ", ".join(weak) if weak else "—"
+            strong_txt = ", ".join(strong) if strong else "—"
+            lines.append(f"- Áreas débiles: {weak_txt} | Fuertes: {strong_txt}")
+
+        behavioral = profile.behavioralProfile
+        if behavioral and behavioral.mostCommonErrorType:
+            lines.append(f"- Error más frecuente: {behavioral.mostCommonErrorType}")
+
+        if attempts > 0:
+            lines.append(f"- Lleva {attempts} intento(s) en este ejercicio")
+
+        # Si solo está el encabezado, no hay nada útil que inyectar.
+        if len(lines) == 1:
+            return ""
+
+        lines.append(
+            "Instrucción: refuerza las áreas débiles; apóyate en lo que ya domina; "
+            "si lleva varios intentos, sé más concreto. Mantén la guía socrática, sin dar la solución."
+        )
+        return "\n".join(lines)
+
     def _calculate_behavioral_metrics(self, events: List[Any]) -> BehavioralMetrics:
         """
         Lógica interna para transformar eventos crudos en indicadores pedagógicos.

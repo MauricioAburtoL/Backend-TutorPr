@@ -2,6 +2,16 @@
 from typing import Optional, List, Literal
 from pydantic import BaseModel, Field, ConfigDict
 
+class LoginIn(BaseModel):
+    username: str
+    password: str
+
+class LoginOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    userId: str = Field(alias="user_id")
+    username: str
+    role: str
+
 class RecommendationSchema(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     title: str #
