@@ -1,4 +1,5 @@
 # backend/core/services/gemini_orchestrator.py
+import threading
 from typing import List, Dict, Any
 from backend.schemas.geminiSchemas import AssistRequest
 from backend.core.services.GeminiTutoringService import GeminiTutoringService
@@ -6,6 +7,15 @@ from backend.core.services.gemini_cache import gemini_cache, CacheEntry
 
 # Singleton del servicio Gemini
 _gemini_service = GeminiTutoringService()
+_request_locks: Dict[tuple[str, str], threading.Lock] = {}
+_request_locks_guard = threading.Lock()
+
+
+def _request_lock(user_id: str, exercise_id: str) -> threading.Lock:
+    """Comparte una sola llamada en curso por usuario y ejercicio."""
+    key = (user_id, exercise_id)
+    with _request_locks_guard:
+        return _request_locks.setdefault(key, threading.Lock())
 
 
 def get_or_fetch(
@@ -32,20 +42,18 @@ def get_or_fetch(
     Returns:
         CacheEntry con la respuesta de Gemini y el estado de entrega de hints
     """
-    # 1. Buscar en cache
-    entry = gemini_cache.get(user_id, exercise_id, code)
-    if entry is not None:
-        return entry
+    # El segundo chequeo dentro del lock evita que dos clics simultáneos hagan
+    # dos llamadas externas antes de que la primera alcance a llenar la caché.
+    with _request_lock(user_id, exercise_id):
+        entry = gemini_cache.get(user_id, exercise_id, code)
+        if entry is not None:
+            return entry
 
-    # 2. Cache miss -> llamar a Gemini
-    request = AssistRequest(
-        context=context or f"Exercise {exercise_id}",
-        language=language,
-        studentCode=code,
-        studentContext=student_context,
-    )
-    response = _gemini_service.analyze_code(request, static_errors=static_errors)
-
-    # 3. Guardar en cache y retornar
-    entry = gemini_cache.put(user_id, exercise_id, code, response)
-    return entry
+        request = AssistRequest(
+            context=context or f"Exercise {exercise_id}",
+            language=language,
+            studentCode=code,
+            studentContext=student_context,
+        )
+        response = _gemini_service.analyze_code(request, static_errors=static_errors)
+        return gemini_cache.put(user_id, exercise_id, code, response)

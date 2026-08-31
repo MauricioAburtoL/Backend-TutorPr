@@ -108,6 +108,17 @@ def _merge_all_errors(
     return sorted(merged, key=lambda e: e["line"])
 
 
+def _syntax_hint(static_errors: List[Dict[str, Any]]) -> str:
+    """Construye una pista inmediata sin enviar código sintácticamente inválido al LLM."""
+    first_error = static_errors[0]
+    line = first_error.get("line", 1)
+    return (
+        f"Python detectó un error de sintaxis en la línea {line}. "
+        "Revisa la estructura de esa línea; si escribiste una explicación en lenguaje "
+        "natural, conviértela en comentario iniciándola con #."
+    )
+
+
 @router.post("/hint", response_model=HintOut)
 def hint(body: HintIn, db: Session = Depends(get_db)):
     started_at = time.perf_counter()
@@ -162,6 +173,40 @@ def hint(body: HintIn, db: Session = Depends(get_db)):
 
     # 3. Analisis estatico ANTES de Gemini (detecta multiples errores de sintaxis)
     static_errors = analyze_syntax(body.code)
+
+    # Los errores de sintaxis tienen evidencia determinista y no necesitan una llamada
+    # externa. Esto entrega una pista inmediata y reduce la superficie de prompt injection.
+    if static_errors:
+        hint_text = _syntax_hint(static_errors)
+        errors_list = _merge_all_errors(
+            [],
+            _extract_real_errors(exec_data.get("stderr", "")),
+            static_errors,
+        )
+        db.add(Event(
+            user_id=body.userId,
+            session_id=body.sessionId,
+            exercise_id=body.exerciseId,
+            event="HintShown",
+            detector="rules",
+            confidence=1.0,
+            payload={
+                "attempt_id": body.attemptId,
+                "pattern_id": "syntax_error",
+                "hint": hint_text,
+                "source": "rules",
+                "latency_ms": round((time.perf_counter() - started_at) * 1000, 2),
+            },
+        ))
+        db.commit()
+        return HintOut(
+            hint=hint_text,
+            pattern_id="syntax_error",
+            concept="estructura",
+            source="rules",
+            has_more_hints=False,
+            detected_errors=errors_list,
+        )
 
     # 3b. Contexto del estudiante (perfil) para personalizar la pista.
     #     Solo hechos directos; "" para usuario nuevo (degradacion elegante).

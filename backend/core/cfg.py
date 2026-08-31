@@ -49,8 +49,9 @@ def _cfg_python(code: str) -> Dict[str, Any]:
     """Construye un CFG legible a partir del AST de Python."""
     try:
         tree = ast.parse(code)
-    except SyntaxError:
-        nodes = [CFGNode("E", "error", "Syntax Error", 1, 1)]
+    except SyntaxError as error:
+        error_line = error.lineno or 1
+        nodes = [CFGNode("E", "error", "Syntax Error", error_line, error_line)]
         return {"language": "python", "nodes": nodes, "edges": []}
 
     g = CFG()
