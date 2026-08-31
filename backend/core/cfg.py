@@ -46,7 +46,7 @@ def cfg_to_mermaid(nodes: List[CFGNode], edges: List[Tuple[str, str]]) -> str:
 
 # ---------- Adaptadores por lenguaje ----------
 def _cfg_python(code: str) -> Dict[str, Any]:
-    """Construye CFG desde código Python usando ast (cobertura ampliada)."""
+    """Construye un CFG legible a partir del AST de Python."""
     try:
         tree = ast.parse(code)
     except SyntaxError:
@@ -55,276 +55,225 @@ def _cfg_python(code: str) -> Dict[str, Any]:
 
     g = CFG()
     loop_stack: List[Tuple[str, str]] = []  # (loop_head, loop_exit)
-
-    # Sumidero de excepciones: se crea solo si se usa.
     exc_sink_id: Optional[str] = None
+
     def exc_sink() -> str:
         nonlocal exc_sink_id
         if exc_sink_id is None:
             exc_sink_id = g.add("stmt", "<exception>", 0, 0)
         return exc_sink_id
 
-    def add_stmt_node(s: ast.stmt) -> str:
-        if isinstance(s, ast.Expr) and isinstance(getattr(s, "value", None), ast.Call) and hasattr(ast, "unparse"):
-            lab = ast.unparse(s.value)  # p.ej. print(i)
-        else:
-            lab = s.__class__.__name__
-        return g.add("stmt", lab, s.lineno, getattr(s, "end_lineno", s.lineno))
+    def connect(sources: List[str], target: str) -> None:
+        for source in sources:
+            edge = (source, target)
+            if edge not in g.edges:
+                g.edges.append(edge)
 
-    def join_node(label: str, ln: int) -> str:
-        return g.add("stmt", label, ln, ln)
+    def unique(node_ids: List[str]) -> List[str]:
+        return list(dict.fromkeys(node_ids))
 
-    def visit(stmts: List[ast.stmt]) -> List[str]:
-        prev = None
-        heads: List[str] = []
-        last = None
+    def statement_label(statement: ast.stmt) -> str:
+        if hasattr(ast, "unparse"):
+            try:
+                return ast.unparse(statement)
+            except Exception:
+                pass
+        return statement.__class__.__name__
 
-        for s in stmts:
+    def add_statement(statement: ast.stmt, kind: str = "stmt", label: str | None = None) -> str:
+        line = getattr(statement, "lineno", 1)
+        end_line = getattr(statement, "end_lineno", line)
+        return g.add(kind, label or statement_label(statement), line, end_line)
 
-            # ---------- IF / ELIF / ELSE ----------
-            if isinstance(s, ast.If):
-                cond = ast.unparse(s.test) if hasattr(ast, "unparse") else "cond"
-                cur = g.add("if", f"if {cond}", s.lineno, getattr(s, "end_lineno", s.lineno))
-                if prev:
-                    g.edges.append((prev, cur))
-                if not heads:
-                    heads = [cur]
+    def build_block(statements: List[ast.stmt], incoming: List[str]) -> List[str]:
+        exits = incoming
+        for statement in statements:
+            exits = build_statement(statement, exits)
+        return unique(exits)
 
-                then_heads = visit(s.body)
+    def build_statement(statement: ast.stmt, incoming: List[str]) -> List[str]:
+        if isinstance(statement, ast.If):
+            condition = ast.unparse(statement.test) if hasattr(ast, "unparse") else "cond"
+            decision = add_statement(statement, "if", f"if {condition}")
+            connect(incoming, decision)
+            then_exits = build_block(statement.body, [decision])
+            else_exits = (
+                build_block(statement.orelse, [decision])
+                if statement.orelse
+                else [decision]
+            )
+            return unique(then_exits + else_exits)
 
-                if len(s.orelse) == 1 and isinstance(s.orelse[0], ast.If):
-                    else_heads = visit([s.orelse[0]])  # elif cadena
-                else:
-                    else_heads = visit(s.orelse) if s.orelse else []
-
-                for h in (then_heads or [cur]):
-                    g.edges.append((cur, h))
-                for h in (else_heads or [cur]):
-                    g.edges.append((cur, h))
-
-                prev = cur
-                last = cur
-
-            # ---------- FOR / WHILE (entrada, retorno y salida) ----------
-            elif isinstance(s, (ast.For, ast.While)):
-                head = g.add("loop", type(s).__name__.lower(),
-                             s.lineno, getattr(s, "end_lineno", s.lineno))
-                exitn = g.add("stmt", "loop_end", s.lineno, s.lineno)
-                if prev:
-                    g.edges.append((prev, head))
-                if not heads:
-                    heads = [head]
-
-                loop_stack.append((head, exitn))
-                body_heads = visit(s.body)
-
-                for h in (body_heads or []):          # entrada
-                    g.edges.append((head, h))
-                for h in (body_heads or [head]):      # retorno
-                    g.edges.append((h, head))
-                g.edges.append((head, exitn))         # salida
-
-                loop_stack.pop()
-                prev = exitn
-                last = exitn
-
-            # ---------- BREAK ----------
-            elif isinstance(s, ast.Break):
-                cur = g.add("stmt", "break", s.lineno, getattr(s, "end_lineno", s.lineno))
-                if prev:
-                    g.edges.append((prev, cur))
-                if loop_stack:
-                    _, loop_exit = loop_stack[-1]
-                    g.edges.append((cur, loop_exit))
-                prev = None
-                last = cur
-                if not heads:
-                    heads = [cur]
-
-            # ---------- CONTINUE ----------
-            elif isinstance(s, ast.Continue):
-                cur = g.add("stmt", "continue", s.lineno, getattr(s, "end_lineno", s.lineno))
-                if prev:
-                    g.edges.append((prev, cur))
-                if loop_stack:
-                    loop_head, _ = loop_stack[-1]
-                    g.edges.append((cur, loop_head))
-                prev = None
-                last = cur
-                if not heads:
-                    heads = [cur]
-
-            # ---------- RETURN ----------
-            elif isinstance(s, ast.Return):
-                cur = g.add("stmt", "return", s.lineno, getattr(s, "end_lineno", s.lineno))
-                if prev:
-                    g.edges.append((prev, cur))
-                prev = None
-                last = cur
-                if not heads:
-                    heads = [cur]
-
-            # ---------- RAISE ----------
-            elif isinstance(s, ast.Raise):
-                lab = "raise " + (ast.unparse(s.exc) if hasattr(ast, "unparse") and s.exc else "")
-                cur = g.add("stmt", lab, s.lineno, getattr(s, "end_lineno", s.lineno))
-                if prev:
-                    g.edges.append((prev, cur))
-                g.edges.append((cur, exc_sink()))
-                prev = None
-                last = cur
-                if not heads:
-                    heads = [cur]
-
-            # ---------- TRY / EXCEPT / ELSE / FINALLY ----------
-            elif isinstance(s, ast.Try):
-                tnode = g.add("stmt", "try", s.lineno, getattr(s, "end_lineno", s.lineno))
-                if prev:
-                    g.edges.append((prev, tnode))
-                if not heads:
-                    heads = [tnode]
-
-                body_heads = visit(s.body)
-                except_heads_all: List[str] = []
-                for h in s.handlers:
-                    et = ast.unparse(h.type) if hasattr(ast, "unparse") and h.type else "except"
-                    en = g.add("stmt", f"except {et}", h.lineno, getattr(h, "end_lineno", h.lineno))
-                    g.edges.append((tnode, en))
-                    eh = visit(h.body)
-                    for x in (eh or [en]):
-                        except_heads_all.append(x)
-
-                else_heads = visit(s.orelse) if s.orelse else []
-
-                for h in (body_heads or [tnode]):
-                    g.edges.append((tnode, h))
-
-                if s.finalbody:
-                    fin_heads = visit(s.finalbody)
-                    tails = (body_heads or [tnode]) + (except_heads_all or []) + (else_heads or [])
-                    for th in tails:
-                        for fh in (fin_heads or []):
-                            g.edges.append((th, fh))
-                    j = join_node("try_join", s.lineno)
-                    for fh in (fin_heads or []):
-                        g.edges.append((fh, j))
-                    prev = j
-                    last = j
-                else:
-                    j = join_node("try_join", s.lineno)
-                    for th in (body_heads or [tnode]):
-                        g.edges.append((th, j))
-                    for eh in (except_heads_all or []):
-                        g.edges.append((eh, j))
-                    for elh in (else_heads or []):
-                        g.edges.append((elh, j))
-                    prev = j
-                    last = j
-
-            # ---------- WITH ----------
-            elif isinstance(s, ast.With):
-                lab = "with " + (ast.unparse(s.items[0].context_expr) if hasattr(ast, "unparse") and s.items else "")
-                wnode = g.add("stmt", lab, s.lineno, getattr(s, "end_lineno", s.lineno))
-                if prev:
-                    g.edges.append((prev, wnode))
-                if not heads:
-                    heads = [wnode]
-                wb = visit(s.body)
-                for h in (wb or []):
-                    g.edges.append((wnode, h))
-                j = join_node("with_exit", s.lineno)
-                for h in (wb or [wnode]):
-                    g.edges.append((h, j))
-                prev = j
-                last = j
-
-            # ---------- MATCH / CASE (Py 3.10+) ----------
-            elif hasattr(ast, "Match") and isinstance(s, ast.Match):
-                mnode = g.add("stmt", "match", s.lineno, getattr(s, "end_lineno", s.lineno))
-                if prev:
-                    g.edges.append((prev, mnode))
-                if not heads:
-                    heads = [mnode]
-                case_tails: List[str] = []
-                for c in s.cases:
-                    clen = g.add("stmt", "case", c.lineno, getattr(c, "end_lineno", c.lineno))
-                    g.edges.append((mnode, clen))
-                    bh = visit(c.body)
-                    for h in (bh or [clen]):
-                        case_tails.append(h)
-                j = join_node("match_join", s.lineno)
-                for t in (case_tails or [mnode]):
-                    g.edges.append((t, j))
-                prev = j
-                last = j
-
-            # ---------- Funciones (def / async def) ----------
-            elif isinstance(s, (ast.FunctionDef, getattr(ast, "AsyncFunctionDef", ()))):  # type: ignore[arg-type]
-                name = getattr(s, "name", "func")
-                fnode = g.add("stmt", f"def {name}()", s.lineno, getattr(s, "end_lineno", s.lineno))
-                if prev:
-                    g.edges.append((prev, fnode))
-                if not heads:
-                    heads = [fnode]
-                prev = fnode
-                last = fnode
-
-            # ---------- Expresión condicional (if-expr) ----------
-            elif isinstance(s, ast.Expr) and isinstance(getattr(s, "value", None), ast.IfExp):
-                cond = s.value
-                cur = g.add("if", f"if {ast.unparse(cond.test) if hasattr(ast,'unparse') else 'cond'}",
-                            s.lineno, getattr(s, "end_lineno", s.lineno))
-                if prev:
-                    g.edges.append((prev, cur))
-                if not heads:
-                    heads = [cur]
-                tb = g.add("stmt", ast.unparse(cond.body) if hasattr(ast, "unparse") else "then", s.lineno, s.lineno)
-                eb = g.add("stmt", ast.unparse(cond.orelse) if hasattr(ast, "unparse") else "else", s.lineno, s.lineno)
-                g.edges.append((cur, tb))
-                g.edges.append((cur, eb))
-                j = join_node("ifexp_join", s.lineno)
-                g.edges.append((tb, j))
-                g.edges.append((eb, j))
-                prev = j
-                last = j
-
-            # ---------- ASYNC / AWAIT / YIELD ----------
-            elif isinstance(s, ast.Expr) and isinstance(getattr(s, "value", None), ast.Await):
-                lab = "await " + (ast.unparse(s.value.value) if hasattr(ast, "unparse") else "")
-                cur = g.add("stmt", lab, s.lineno, getattr(s, "end_lineno", s.lineno))
-                if prev:
-                    g.edges.append((prev, cur))
-                if not heads:
-                    heads = [cur]
-                prev = cur
-                last = cur
-
-            elif isinstance(s, ast.Expr) and isinstance(getattr(s, "value", None), (ast.Yield, getattr(ast, "YieldFrom", ()))):
-                lab = s.value.__class__.__name__.lower()
-                cur = g.add("stmt", lab, s.lineno, getattr(s, "end_lineno", s.lineno))
-                if prev:
-                    g.edges.append((prev, cur))
-                if not heads:
-                    heads = [cur]
-                prev = cur
-                last = cur
-
-            # ---------- Default: statement genérico ----------
+        if isinstance(statement, (ast.For, ast.While, ast.AsyncFor)):
+            if isinstance(statement, (ast.For, ast.AsyncFor)) and hasattr(ast, "unparse"):
+                prefix = "async for" if isinstance(statement, ast.AsyncFor) else "for"
+                label = f"{prefix} {ast.unparse(statement.target)} in {ast.unparse(statement.iter)}"
+            elif hasattr(ast, "unparse"):
+                label = f"while {ast.unparse(statement.test)}"
             else:
-                cur = add_stmt_node(s)
-                if prev:
-                    g.edges.append((prev, cur))
-                if not heads:
-                    heads = [cur]
-                prev = cur
-                last = cur
+                label = statement.__class__.__name__.lower()
 
-        return heads or ([last] if last else [])
+            head = add_statement(statement, "loop", label)
+            loop_exit = g.add("stmt", "loop_end", statement.lineno, statement.lineno)
+            connect(incoming, head)
+            connect([head], loop_exit)
+
+            loop_stack.append((head, loop_exit))
+            body_exits = build_block(statement.body, [head])
+            loop_stack.pop()
+            connect(body_exits, head)
+
+            if statement.orelse:
+                return build_block(statement.orelse, [loop_exit])
+            return [loop_exit]
+
+        if isinstance(statement, ast.Break):
+            node = add_statement(statement, label="break")
+            connect(incoming, node)
+            if loop_stack:
+                connect([node], loop_stack[-1][1])
+            return []
+
+        if isinstance(statement, ast.Continue):
+            node = add_statement(statement, label="continue")
+            connect(incoming, node)
+            if loop_stack:
+                connect([node], loop_stack[-1][0])
+            return []
+
+        if isinstance(statement, ast.Return):
+            label = "return"
+            if statement.value is not None and hasattr(ast, "unparse"):
+                label = f"return {ast.unparse(statement.value)}"
+            node = add_statement(statement, label=label)
+            connect(incoming, node)
+            return []
+
+        if isinstance(statement, ast.Raise):
+            label = statement_label(statement)
+            node = add_statement(statement, label=label)
+            connect(incoming, node)
+            connect([node], exc_sink())
+            return []
+
+        if isinstance(statement, ast.Try):
+            try_node = add_statement(statement, label="try")
+            connect(incoming, try_node)
+            body_exits = build_block(statement.body, [try_node])
+            normal_exits = (
+                build_block(statement.orelse, body_exits)
+                if statement.orelse
+                else body_exits
+            )
+
+            handler_exits: List[str] = []
+            for handler in statement.handlers:
+                exception_type = (
+                    ast.unparse(handler.type)
+                    if handler.type is not None and hasattr(ast, "unparse")
+                    else ""
+                )
+                label = f"except {exception_type}".rstrip()
+                handler_node = g.add(
+                    "stmt",
+                    label,
+                    handler.lineno,
+                    getattr(handler, "end_lineno", handler.lineno),
+                )
+                connect([try_node], handler_node)
+                handler_exits.extend(build_block(handler.body, [handler_node]))
+
+            exits = unique(normal_exits + handler_exits)
+            if statement.finalbody:
+                return build_block(statement.finalbody, exits or [try_node])
+            return exits
+
+        if isinstance(statement, (ast.With, ast.AsyncWith)):
+            prefix = "async with" if isinstance(statement, ast.AsyncWith) else "with"
+            context = (
+                ast.unparse(statement.items[0].context_expr)
+                if statement.items and hasattr(ast, "unparse")
+                else ""
+            )
+            with_node = add_statement(statement, label=f"{prefix} {context}".rstrip())
+            connect(incoming, with_node)
+            body_exits = build_block(statement.body, [with_node])
+            exit_node = g.add("stmt", "with_exit", statement.lineno, statement.lineno)
+            connect(body_exits or [with_node], exit_node)
+            return [exit_node]
+
+        if hasattr(ast, "Match") and isinstance(statement, ast.Match):
+            subject = ast.unparse(statement.subject) if hasattr(ast, "unparse") else ""
+            match_node = add_statement(statement, label=f"match {subject}".rstrip())
+            connect(incoming, match_node)
+            case_exits: List[str] = []
+
+            for case in statement.cases:
+                pattern = ast.unparse(case.pattern) if hasattr(ast, "unparse") else "case"
+                guard = (
+                    f" if {ast.unparse(case.guard)}"
+                    if case.guard is not None and hasattr(ast, "unparse")
+                    else ""
+                )
+                case_line = getattr(case.pattern, "lineno", statement.lineno)
+                case_end = getattr(case.pattern, "end_lineno", case_line)
+                case_node = g.add("stmt", f"case {pattern}{guard}", case_line, case_end)
+                connect([match_node], case_node)
+                case_exits.extend(build_block(case.body, [case_node]))
+
+            join = g.add("stmt", "match_join", statement.lineno, statement.lineno)
+            connect(case_exits or [match_node], join)
+            return [join]
+
+        if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            arguments = ast.unparse(statement.args) if hasattr(ast, "unparse") else ""
+            prefix = "async def" if isinstance(statement, ast.AsyncFunctionDef) else "def"
+            function_node = add_statement(
+                statement,
+                label=f"{prefix} {statement.name}({arguments})",
+            )
+            connect(incoming, function_node)
+            build_block(statement.body, [function_node])
+            return [function_node]
+
+        if isinstance(statement, ast.ClassDef):
+            class_node = add_statement(statement, label=f"class {statement.name}")
+            connect(incoming, class_node)
+            build_block(statement.body, [class_node])
+            return [class_node]
+
+        if isinstance(statement, ast.Expr) and isinstance(statement.value, ast.IfExp):
+            condition = (
+                ast.unparse(statement.value.test)
+                if hasattr(ast, "unparse")
+                else "cond"
+            )
+            decision = add_statement(statement, "if", f"if {condition}")
+            connect(incoming, decision)
+            then_node = g.add(
+                "stmt",
+                ast.unparse(statement.value.body) if hasattr(ast, "unparse") else "then",
+                statement.lineno,
+                statement.lineno,
+            )
+            else_node = g.add(
+                "stmt",
+                ast.unparse(statement.value.orelse) if hasattr(ast, "unparse") else "else",
+                statement.lineno,
+                statement.lineno,
+            )
+            join = g.add("stmt", "ifexp_join", statement.lineno, statement.lineno)
+            connect([decision], then_node)
+            connect([decision], else_node)
+            connect([then_node, else_node], join)
+            return [join]
+
+        node = add_statement(statement)
+        connect(incoming, node)
+        return [node]
 
     entry = g.add("start", "start", 1, 1)
-    heads = visit(tree.body)
-    for h in (heads or [entry]):
-        g.edges.append((entry, h))
+    build_block(tree.body, [entry])
 
     return {"language": "python", "nodes": g.nodes, "edges": g.edges}
 

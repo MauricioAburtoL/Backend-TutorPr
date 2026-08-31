@@ -9,7 +9,7 @@ from backend.infra.db import init_db
 from backend.infra.db import engine, Base
 
 # Routers de la capa API
-from backend.api import execute, hint, cfg, kpis, assist, auth #events
+from backend.api import execute, hint, cfg, kpis, assist, auth, events
 
 
 app = FastAPI(
@@ -42,6 +42,7 @@ app.include_router(cfg.router,     prefix="/api", tags=["Static Analysis (CFG)"]
 app.include_router(kpis.router,    prefix="/api/kpis", tags=["Learning Analytics"])
 app.include_router(assist.router,  prefix="/api", tags=["Gemini AI Assistant"])
 app.include_router(auth.router,    prefix="/api", tags=["Auth"])
+app.include_router(events.router,  prefix="/api", tags=["Telemetry"])
 
 @app.get("/health")
 def health():

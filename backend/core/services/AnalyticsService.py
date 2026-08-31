@@ -116,7 +116,7 @@ class AnalyticsService:
                     successes += 1
                     consecutive_errors = 0 # Reset de racha al tener éxito
             
-            if ev.event == "FeedbackShown":
+            if ev.event == "HintShown" and payload.get("status") != "not_needed":
                 hint_requests += 1
 
         # --- Cálculos Finales ---

@@ -10,6 +10,7 @@ class GeminiTutoringService:
         # Configurar la API Key desde variables de entorno
         # Se recomienda asegurar que GEMINI_API_KEY esté seteada en el sistema
         self.api_key = os.getenv("GEMINI_API_KEY")
+        self.model_name = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
         if not self.api_key:
             print("Warning: GEMINI_API_KEY not found in environment variables.")
         else:
@@ -22,7 +23,7 @@ class GeminiTutoringService:
         if not self.api_key:
              return self._create_error_response("Gemini API Key missing")
 
-        model = genai.GenerativeModel('gemini-2.0-flash')
+        model = genai.GenerativeModel(self.model_name)
 
         prompt = self._build_prompt(request, static_errors=static_errors)
 

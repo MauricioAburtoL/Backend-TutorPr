@@ -91,7 +91,12 @@ class StorageSQLite:
     def get_test_cases(self, exercise_id: str):
         """Consulta los casos de prueba asociados a un ejercicio específico."""
         from ..core.models import TestCase
-        return self.db.query(TestCase).filter(TestCase.exercise_id == exercise_id).all()
+        return (
+            self.db.query(TestCase)
+            .filter(TestCase.exercise_id == exercise_id)
+            .order_by(TestCase.id)
+            .all()
+        )
 
     def get_exercise_by_id(self, exercise_id: str):
         """Consulta la tabla 'exercises' por ID."""

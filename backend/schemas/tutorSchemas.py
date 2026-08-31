@@ -1,7 +1,8 @@
 # backend/schemas/tutorSchemas.py
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, model_validator
 from typing import Optional, Any, Dict, List
 from .baseSchemas import Lang
+from ..core.code_validation import has_meaningful_code
 
 class HintIn(BaseModel):
     # 'extra="allow"' es vital para que no truene si Angular envia campos de mas
@@ -16,6 +17,12 @@ class HintIn(BaseModel):
     # Cambiamos ExecResult por Dict[str, Any] para que acepte cualquier objeto JSON
     execResult: Optional[Dict[str, Any]] = Field(default_factory=dict, alias="exec_result")
     lang: Optional[Lang] = "python"
+
+    @model_validator(mode="after")
+    def validate_meaningful_code(self):
+        if not has_meaningful_code(self.code, self.lang or "python"):
+            raise ValueError("Escribe alguna instrucción antes de solicitar una pista.")
+        return self
 
 class HintOut(BaseModel):
     model_config = ConfigDict(populate_by_name=True)

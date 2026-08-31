@@ -3,6 +3,34 @@ import re # Necesario para limpiar comentarios
 from typing import Any, Dict, List
 from ..pipeline import run_detection_pipeline
 
+
+_EVA02_FIRST_HINTS = {
+    "eva02-t1": {
+        "pattern_id": "eva02_maximum_tie",
+        "concept": "Condicionales y casos de igualdad",
+        "hint": (
+            "Prueba seguir las ramas cuando dos valores comparten el valor máximo. "
+            "¿Alguna comparación deja fuera el caso de igualdad?"
+        ),
+    },
+    "eva02-t2": {
+        "pattern_id": "eva02_accumulator",
+        "concept": "Acumuladores",
+        "hint": (
+            "Observa el valor de cada suma antes y después de varias iteraciones. "
+            "¿La actualización conserva lo acumulado anteriormente?"
+        ),
+    },
+    "eva02-t3": {
+        "pattern_id": "eva02_range_boundary",
+        "concept": "Límites de recorrido",
+        "hint": (
+            "Enumera los pares de posiciones que el ciclo compara realmente. "
+            "¿También alcanza el último par de elementos?"
+        ),
+    },
+}
+
 class TutoringService:
     
     """
@@ -24,7 +52,8 @@ class TutoringService:
         code: str,
         exec_result: Dict[str, Any] | None,
         lang: str = "python",
-        test_cases: List[Any] | None = None
+        test_cases: List[Any] | None = None,
+        exercise_id: str | None = None,
     ) -> Dict[str, str]:
 
         exec_result = exec_result or {}
@@ -37,6 +66,10 @@ class TutoringService:
                 "concept": "Code structure",
                 "hint": "Veo que has añadido comentarios, pero ¡necesitas escribir la instrucción para imprimir el mensaje!"
             }
+
+        eva02_hint = _EVA02_FIRST_HINTS.get(exercise_id or "")
+        if eva02_hint and exec_result.get("status") == "ok":
+            return dict(eva02_hint)
 
         # Si pasa la validación, corre el pipeline normal
         detection = run_detection_pipeline(code, exec_result, test_cases=test_cases or [], lang=lang)

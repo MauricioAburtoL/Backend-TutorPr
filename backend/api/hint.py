@@ -1,5 +1,7 @@
 # backend/api/hint.py
+import hashlib
 import re
+import time
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from typing import Dict, Any, List, Optional, Tuple
@@ -8,6 +10,7 @@ from typing import Dict, Any, List, Optional, Tuple
 from ..infra.db import get_db
 from ..core.services.TutoringService import TutoringService
 from ..core.services.gemini_orchestrator import get_or_fetch
+from ..core.services.gemini_cache import gemini_cache
 from ..core.services.AnalyticsService import AnalyticsService
 from ..infra.storage_sqlite import StorageSQLite
 from ..schemas import HintIn, HintOut
@@ -107,10 +110,42 @@ def _merge_all_errors(
 
 @router.post("/hint", response_model=HintOut)
 def hint(body: HintIn, db: Session = Depends(get_db)):
+    started_at = time.perf_counter()
     exec_data = body.execResult or {}
+
+    db.add(Event(
+        user_id=body.userId,
+        session_id=body.sessionId,
+        exercise_id=body.exerciseId,
+        event="HintRequested",
+        detector="frontend",
+        confidence=1.0,
+        payload={
+            "attempt_id": body.attemptId,
+            "code_hash": hashlib.sha256(body.code.encode("utf-8")).hexdigest(),
+            "lang": (body.lang or "python").lower(),
+        },
+    ))
+    db.commit()
 
     # 1. Si la solucion ya es correcta, short-circuit
     if exec_data.get("status") == "ok" and exec_data.get("is_correct") is True:
+        db.add(Event(
+            user_id=body.userId,
+            session_id=body.sessionId,
+            exercise_id=body.exerciseId,
+            event="HintShown",
+            detector="system",
+            confidence=1.0,
+            payload={
+                "attempt_id": body.attemptId,
+                "pattern_id": "correct",
+                "source": "system",
+                "status": "not_needed",
+                "latency_ms": round((time.perf_counter() - started_at) * 1000, 2),
+            },
+        ))
+        db.commit()
         return HintOut(
             hint="Tu solucion ya es correcta! No necesitas mas pistas.",
             pattern_id="correct",
@@ -139,6 +174,7 @@ def hint(body: HintIn, db: Session = Depends(get_db)):
 
     # 4. Intentar obtener respuesta de Gemini (cache o nueva llamada)
     try:
+        cache_hit = gemini_cache.get(body.userId, body.exerciseId, body.code) is not None
         entry = get_or_fetch(
             user_id=body.userId,
             exercise_id=body.exerciseId,
@@ -182,13 +218,14 @@ def hint(body: HintIn, db: Session = Depends(get_db)):
                 user_id=body.userId,
                 session_id=body.sessionId,
                 exercise_id=body.exerciseId,
-                event="FeedbackShown",
+                event="HintShown",
                 payload={
                     "attempt_id": body.attemptId,
                     "pattern_id": "gemini_progressive",
                     "hint": hint_text,
-                    "source": "gemini",
+                    "source": "cache" if cache_hit else "gemini",
                     "hint_index": entry.hint_index,
+                    "latency_ms": round((time.perf_counter() - started_at) * 1000, 2),
                 }
             )
             db.add(ev)
@@ -200,14 +237,20 @@ def hint(body: HintIn, db: Session = Depends(get_db)):
             hint=hint_text,
             pattern_id="gemini_progressive",
             concept="AI-assisted",
-            source="gemini",
+            source="cache" if cache_hit else "gemini",
             has_more_hints=has_more,
             detected_errors=errors_list,
         )
 
     except Exception:
         # 7. FALLBACK: pistas basadas en reglas (sistema original)
-        d = rule_service.make_hint(body.code, exec_data, lang=(body.lang or "python").lower(), test_cases=test_cases)
+        d = rule_service.make_hint(
+            body.code,
+            exec_data,
+            lang=(body.lang or "python").lower(),
+            test_cases=test_cases,
+            exercise_id=body.exerciseId,
+        )
 
         # Aun sin Gemini, el analisis estatico + stderr dan lineas con error
         real_errors = _extract_real_errors(exec_data.get("stderr", ""))
@@ -219,12 +262,13 @@ def hint(body: HintIn, db: Session = Depends(get_db)):
                 user_id=body.userId,
                 session_id=body.sessionId,
                 exercise_id=body.exerciseId,
-                event="FeedbackShown",
+                event="HintShown",
                 payload={
                     "attempt_id": body.attemptId,
                     "pattern_id": d.get("pattern_id", "unknown"),
                     "hint": d.get("hint", ""),
                     "source": "rules",
+                    "latency_ms": round((time.perf_counter() - started_at) * 1000, 2),
                 }
             )
             db.add(ev)

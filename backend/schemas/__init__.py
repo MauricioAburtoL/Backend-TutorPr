@@ -13,7 +13,15 @@
 # ]
 
 from .baseSchemas import Lang
-from .executionSchemas import ExecuteIn, ExecResult, CodeIn, CodeOnly, CFGOut, CFGRequest
+from .executionSchemas import (
+    ExecuteIn,
+    ExecResult,
+    CodeIn,
+    CodeOnly,
+    CFGOut,
+    CFGRequest,
+    TelemetryEventIn,
+)
 from .tutorSchemas import HintIn, HintOut
 from .courseSchemas import ExerciseSchema, TopicSchema
 from .userSchemas import UserStatsSchema, BehavioralMetrics, SkillSchema, LoginIn, LoginOut
@@ -26,6 +34,7 @@ __all__ = [
     "CodeOnly", # <--- Ahora sí está incluido
     "CFGOut",
     "CFGRequest",
+    "TelemetryEventIn",
     "HintIn",
     "HintOut",
     "ExerciseSchema",

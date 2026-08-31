@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import select, func, case, cast, String
+from sqlalchemy import select, func, case
 from typing import List
 
 from ..infra.db import get_db
@@ -19,7 +19,7 @@ def summary(db: Session = Depends(get_db)):
     ok_ratio = (
         func.avg(
             case(
-                (cast(Event.payload["status"].astext, String) == "ok", 1),
+                (Event.payload["is_correct"].as_boolean().is_(True), 1),
                 else_=0,
             )
         ) * 100.0
@@ -41,7 +41,11 @@ def get_topics(db: Session = Depends(get_db)):
     storage = StorageSQLite(db)
     return storage.get_all_topics()
 
-@router.get("/topics/{topic_id}/exercises", response_model=List[ExerciseSchema])
+@router.get(
+    "/topics/{topic_id}/exercises",
+    response_model=List[ExerciseSchema],
+    response_model_by_alias=False,
+)
 def get_exercises(topic_id: str, db: Session = Depends(get_db)):
     storage = StorageSQLite(db)
     exercises = storage.get_exercises_by_topic(topic_id)
@@ -50,7 +54,11 @@ def get_exercises(topic_id: str, db: Session = Depends(get_db)):
     return exercises
 
 # 🌟 NUEVO ENDPOINT PARA EL PLAYGROUND 🌟
-@router.get("/exercises/{exercise_id}", response_model=ExerciseSchema)
+@router.get(
+    "/exercises/{exercise_id}",
+    response_model=ExerciseSchema,
+    response_model_by_alias=False,
+)
 def get_exercise_by_id(exercise_id: str, db: Session = Depends(get_db)):
     """
     Recupera un ejercicio específico por su ID (ej: e1).

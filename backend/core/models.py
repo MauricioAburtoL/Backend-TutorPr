@@ -15,7 +15,7 @@ class Event(Base):
     session_id = Column(Text, nullable=False)
     exercise_id = Column(Text, nullable=False)
 
-    event = Column(Text, nullable=False)         # p.ej.: CodeExecuted, FeedbackShown
+    event = Column(Text, nullable=False)         # p.ej.: TaskStarted, CodeExecuted, HintShown
     detector = Column(Text)                      # p.ej.: 'rules', 'llm', 'static'
     confidence = Column(Float)                   # 0.0 – 1.0
     payload = Column(JSON, nullable=False)       # dict arbitrario con detalles
@@ -100,5 +100,6 @@ class TestCase(Base):
     id = Column(Integer, primary_key=True, index=True)
     exercise_id = Column(String, ForeignKey("exercises.id"))
     input_data = Column(String, nullable=True)  # Lo que se le envía al stdin
+    test_code = Column(Text, nullable=True)  # Comprobación interna; nunca se expone al alumno
     expected_output = Column(String)            # Lo que se espera en el stdout
     is_hidden = Column(Boolean, default=False)  # Si el alumno puede ver este caso

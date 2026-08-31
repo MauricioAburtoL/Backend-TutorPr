@@ -1,14 +1,31 @@
 import json
 import hashlib
+from sqlalchemy import inspect, text
 from backend.infra.db import SessionLocal, engine, Base
 from backend.core import models
+from backend.core.eva02_tasks import (
+    EVA02_EXERCISES,
+    EVA02_TEST_CASES,
+    EVA02_TOPIC,
+)
 
 def _hash_password(password: str) -> str:
     return hashlib.sha256(password.encode("utf-8")).hexdigest()
 
+
+def _ensure_schema() -> None:
+    """Aplica la migración mínima que necesita la base SQLite existente."""
+    if engine.dialect.name != "sqlite":
+        return
+    columns = {column["name"] for column in inspect(engine).get_columns("test_cases")}
+    if "test_code" not in columns:
+        with engine.begin() as connection:
+            connection.execute(text("ALTER TABLE test_cases ADD COLUMN test_code TEXT"))
+
 def seed_data():
     # Crea las tablas si no existen
     Base.metadata.create_all(bind=engine)
+    _ensure_schema()
     db = SessionLocal()
 
     try:
@@ -107,6 +124,7 @@ def seed_data():
                 "estimated_time": "1h 30m"
             },
         ]
+        topics_data.append(EVA02_TOPIC)
 
         # =============================================
         # 2. EJERCICIOS (Exercises)
@@ -410,6 +428,7 @@ def seed_data():
                 "base_code": "# Ordenamiento por selección directa\nclass Coleccion:\n    def __init__(self):\n        self.datos = [15, 3, 8, 12, 1, 19, 7, 4, 11, 6]\n        self.total = len(self.datos)\n\n    def mostrar(self):\n        print(self.datos)\n\n    def ordenar(self):\n        # Implementa selección directa\n        pass\n\n# Programa principal\nnum = Coleccion()\nprint('Antes:')\nnum.mostrar()\nnum.ordenar()\nprint('Después:')\nnum.mostrar()\n"
             },
         ]
+        exercises_data.extend(EVA02_EXERCISES)
 
         # =============================================
         # 3. CASOS DE PRUEBA (Test Cases)
@@ -478,6 +497,7 @@ def seed_data():
             {"exercise_id": "e-ord-1", "input_data": None, "expected_output": "Antes:\n[15, 3, 8, 12, 1, 19, 7, 4, 11, 6]\nDespués:\n[1, 3, 4, 6, 7, 8, 11, 12, 15, 19]", "is_hidden": False},
             {"exercise_id": "e-ord-2", "input_data": None, "expected_output": "Antes:\n[15, 3, 8, 12, 1, 19, 7, 4, 11, 6]\nDespués:\n[1, 3, 4, 6, 7, 8, 11, 12, 15, 19]", "is_hidden": False},
         ]
+        test_cases_data.extend(EVA02_TEST_CASES)
 
         # --- PROCESO DE ACTUALIZACIÓN (UPSERT) ---
 
@@ -503,11 +523,13 @@ def seed_data():
         for tc in test_cases_data:
             existing_tc = db.query(models.TestCase).filter(
                 models.TestCase.exercise_id == tc["exercise_id"],
-                models.TestCase.input_data == tc["input_data"]
+                models.TestCase.input_data == tc["input_data"],
+                models.TestCase.test_code == tc.get("test_code"),
             ).first()
             if existing_tc:
                 existing_tc.expected_output = tc["expected_output"]
                 existing_tc.is_hidden = tc["is_hidden"]
+                existing_tc.test_code = tc.get("test_code")
             else:
                 db.add(models.TestCase(**tc))
 
