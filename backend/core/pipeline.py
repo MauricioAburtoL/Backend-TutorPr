@@ -38,8 +38,11 @@ def run_detection_pipeline(
         "stderr": exec_result.get("stderr", "") or "",
         "stdout": exec_result.get("stdout", "") or "",
         "expected_output": expected, # 👈 Inyectamos la "verdad" de la base de datos
+        # Veredicto ya emitido por el evaluador cuando el ejercicio tiene
+        # contrato publicado; tiene prioridad sobre la comparación heredada.
+        "evaluation_status": exec_result.get("evaluation_status"),
         "code": code,
-        "clean_code": stripped_code 
+        "clean_code": stripped_code
     }
     
     return detect_from_signals(signals, lang=lang)

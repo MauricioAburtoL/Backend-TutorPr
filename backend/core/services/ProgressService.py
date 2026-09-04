@@ -15,6 +15,12 @@ class ProgressService:
         self.storage = storage
         self.db = storage.db
 
+    _NON_SCORING_STATUSES = {
+        "binding_inconclusive",
+        "output_inconclusive",
+        "configuration_error",
+    }
+
     def update_after_attempt(self, user_id: str, exercise_id: str, is_correct: bool) -> None:
         if not user_id:
             return
@@ -27,14 +33,23 @@ class ProgressService:
             .all()
         )
 
+        scored_events = [
+            event
+            for event in events
+            if (event.payload or {}).get("evaluation_status")
+            not in self._NON_SCORING_STATUSES
+        ]
+
         # --- Ejercicios completados (distinct con is_correct=True) ---
         completed_ids: Set[str] = {
-            ev.exercise_id for ev in events if (ev.payload or {}).get("is_correct") is True
+            ev.exercise_id
+            for ev in scored_events
+            if (ev.payload or {}).get("is_correct") is True
         }
         stats.exercises_completed = len(completed_ids)
 
         # --- Mapa ejercicio -> tema ---
-        attempted_ex_ids = {ev.exercise_id for ev in events}
+        attempted_ex_ids = {ev.exercise_id for ev in scored_events}
         ex_to_topic: Dict[str, str] = {}
         if attempted_ex_ids:
             for ex in self.db.query(Exercise).filter(Exercise.id.in_(attempted_ex_ids)).all():
@@ -47,7 +62,7 @@ class ProgressService:
         solved_topics.discard(None)
 
         failed_topics: Set[str] = set()
-        for ev in events:
+        for ev in scored_events:
             if (ev.payload or {}).get("is_correct") is not True:
                 t = ex_to_topic.get(ev.exercise_id)
                 if t:
@@ -59,8 +74,12 @@ class ProgressService:
         stats.weak_areas = sorted(topic_titles[t] for t in weak_topics if t in topic_titles)
 
         # --- Tasa de aciertos (solo para la UI; NO se inyecta al prompt) ---
-        total = len(events)
-        correct = sum(1 for ev in events if (ev.payload or {}).get("is_correct") is True)
+        total = len(scored_events)
+        correct = sum(
+            1
+            for ev in scored_events
+            if (ev.payload or {}).get("is_correct") is True
+        )
         stats.mastery_score = round(correct / total * 100) if total > 0 else 0
 
         # --- Último ejercicio accedido ---

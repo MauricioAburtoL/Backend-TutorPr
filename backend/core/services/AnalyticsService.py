@@ -1,5 +1,5 @@
 # backend/core/services/AnalyticsService.py
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 from ...schemas import BehavioralMetrics, UserStatsSchema
 
 class AnalyticsService:
@@ -103,18 +103,25 @@ class AnalyticsService:
             payload = ev.payload or {}
             
             if ev.event == "CodeExecuted":
+                if payload.get("evaluation_status") in {
+                    "binding_inconclusive",
+                    "output_inconclusive",
+                    "configuration_error",
+                }:
+                    continue
                 total_attempts += 1
-                if payload.get("status") == "error":
+                if payload.get("is_correct") is True:
+                    successes += 1
+                    consecutive_errors = 0
+                else:
                     # Conteo por tipo de error
-                    err = payload.get("error_type", "UnknownError")
-                    error_counts[err] = error_counts.get(err, 0) + 1
+                    if payload.get("status") == "error":
+                        err = payload.get("error_type", "UnknownError")
+                        error_counts[err] = error_counts.get(err, 0) + 1
                     
                     # Lógica de racha de errores
                     consecutive_errors += 1
                     max_consecutive_errors = max(max_consecutive_errors, consecutive_errors)
-                else:
-                    successes += 1
-                    consecutive_errors = 0 # Reset de racha al tener éxito
             
             if ev.event == "HintShown" and payload.get("status") != "not_needed":
                 hint_requests += 1

@@ -24,7 +24,52 @@ def _py_detect_from_signals(signals: Dict[str, Any]) -> DetectionResult:
     expected = str(signals.get("expected_output", "")).strip()
 
     if status == "ok":
-            # VALIDACIÓN RIGUROSA:
+            # Cuando el ejercicio tiene contrato, la evaluación ya se realizó y
+            # es la fuente de verdad. Volver a comparar el stdout completo
+            # reintroduciría el rechazo por formato que el evaluador eliminó, y
+            # sin casos heredados daría por correcta cualquier ejecución.
+            evaluation_status = signals.get("evaluation_status")
+            if evaluation_status:
+                if evaluation_status == "correct":
+                    return DetectionResult(
+                        "correct", "", "¡Excelente trabajo! Tu solución es correcta."
+                    )
+                if evaluation_status == "incorrect":
+                    detail = (
+                        f" Se esperaba '{expected}' y recibí '{stdout}'."
+                        if expected
+                        else ""
+                    )
+                    return DetectionResult(
+                        pattern_id="wrong_output",
+                        concept="Lógica de salida",
+                        hint=(
+                            "Tu código no dio error, pero el resultado no coincide "
+                            "con el del ejercicio en todos los casos." + detail
+                        ),
+                    )
+                if evaluation_status == "output_inconclusive":
+                    return DetectionResult(
+                        pattern_id="ambiguous_output",
+                        concept="Presentación del resultado",
+                        hint=(
+                            "Tu programa terminó, pero no fue posible identificar "
+                            "cuál de sus salidas es la respuesta. Revisa que el "
+                            "resultado quede impreso de forma clara."
+                        ),
+                    )
+                if evaluation_status == "binding_inconclusive":
+                    return DetectionResult(
+                        pattern_id="ambiguous_input",
+                        concept="Datos de entrada",
+                        hint=(
+                            "No fue posible reconocer los datos que usa tu programa. "
+                            "Revisa que pida o defina la misma cantidad de datos que "
+                            "plantea el ejercicio."
+                        ),
+                    )
+
+            # VALIDACIÓN RIGUROSA (camino heredado, sin contrato publicado):
             if expected and stdout != expected:
                 return DetectionResult(
                     pattern_id="wrong_output",

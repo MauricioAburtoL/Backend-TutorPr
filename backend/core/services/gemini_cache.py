@@ -1,7 +1,7 @@
 # backend/core/services/gemini_cache.py
 import hashlib
 import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Dict, Optional, Tuple
 
 from backend.schemas.geminiSchemas import AssistResponse

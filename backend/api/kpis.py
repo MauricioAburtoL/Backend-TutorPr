@@ -1,6 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import select, func, case
 from typing import List
 
 from ..infra.db import get_db
@@ -16,23 +15,31 @@ router = APIRouter()
 @router.get("/summary")
 def summary(db: Session = Depends(get_db)):
     """Calcula el porcentaje de éxito por ejercicio."""
-    ok_ratio = (
-        func.avg(
-            case(
-                (Event.payload["is_correct"].as_boolean().is_(True), 1),
-                else_=0,
-            )
-        ) * 100.0
-    ).label("task_success_pct")
+    non_scoring = {
+        "binding_inconclusive",
+        "output_inconclusive",
+        "configuration_error",
+    }
+    totals = {}
+    correct = {}
+    events = db.query(Event).filter(Event.event == "CodeExecuted").all()
+    for event in events:
+        payload = event.payload or {}
+        if payload.get("evaluation_status") in non_scoring:
+            continue
+        totals[event.exercise_id] = totals.get(event.exercise_id, 0) + 1
+        if payload.get("is_correct") is True:
+            correct[event.exercise_id] = correct.get(event.exercise_id, 0) + 1
 
-    stmt = (
-        select(Event.exercise_id, ok_ratio)
-        .where(Event.event == "CodeExecuted")
-        .group_by(Event.exercise_id)
-    )
-
-    rows = db.execute(stmt).mappings().all()
-    return {"task_success": list(rows)}
+    return {
+        "task_success": [
+            {
+                "exercise_id": exercise_id,
+                "task_success_pct": correct.get(exercise_id, 0) / total * 100.0,
+            }
+            for exercise_id, total in totals.items()
+        ]
+    }
 
 # --- ENDPOINTS DE CONTENIDO ---
 

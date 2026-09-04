@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, Integer, Text, JSON, TIMESTAMP, Float, Index, String, ForeignKey
+from sqlalchemy import Boolean, Column, Integer, Text, JSON, TIMESTAMP, Float, Index, String, ForeignKey, UniqueConstraint
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 
@@ -70,6 +70,27 @@ class Exercise(Base):
     order = Column(Integer, default=0)     # Orden dentro del topic
 
     topic = relationship("Topic", back_populates="exercises")
+
+
+class ExerciseContract(Base):
+    """Versión publicada del contrato que activa la evaluación flexible."""
+
+    __tablename__ = "exercise_contracts"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    exercise_id = Column(String, ForeignKey("exercises.id"), nullable=False, index=True)
+    version = Column(Integer, nullable=False, default=1)
+    status = Column(String, nullable=False, default="published")
+    definition = Column(JSON, nullable=False)
+    created_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "exercise_id",
+            "version",
+            name="uq_exercise_contract_version",
+        ),
+    )
 
 class UserStats(Base):
     """

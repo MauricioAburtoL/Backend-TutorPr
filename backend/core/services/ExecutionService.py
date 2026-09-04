@@ -38,6 +38,10 @@ class OutputLimitExceeded(Exception):
     """Interrumpe programas que generan una salida excesiva."""
 
 
+class InputLimitExceeded(Exception):
+    """Interrumpe programas que solicitan más datos de los autorizados."""
+
+
 class _LimitedStringIO(io.StringIO):
     def __init__(self, limit: int):
         super().__init__()
@@ -131,12 +135,22 @@ def _make_restricted_import(allowed: set):
 # Sandbox principal
 # ---------------------------------------------------------------------------
 
-def _run_code_in_process(code: str, input_data: str | None = None) -> Dict[str, Any]:
+def _run_code_in_process(
+    code: str,
+    input_data: str | None = None,
+    max_output_chars: int | None = None,
+    max_input_requests: int | None = None,
+) -> Dict[str, Any]:
     """
     Ejecuta código restringido dentro del proceso trabajador desechable.
     1. Valida el AST para detectar patrones peligrosos (imports, attrs, calls).
     2. Ejecuta con builtins restringidos y __import__ personalizado.
+
+    Los límites de salida y de lecturas provienen del contrato del ejercicio
+    (`FR-RUN-002`); cuando no se indican se aplican los valores globales.
     """
+    output_limit = min(max_output_chars or _MAX_OUTPUT_CHARS, _MAX_OUTPUT_CHARS)
+    input_limit = max_input_requests
 
     # 1) Análisis estático del AST
     error_msg = _ast_check(code)
@@ -147,25 +161,70 @@ def _run_code_in_process(code: str, input_data: str | None = None) -> Dict[str, 
             "stderr": error_msg,
             "error_type": "SandboxError",
             "runtime_ms": None,
+            "events": [],
         }
+
+    execution_events: List[Dict[str, Any]] = []
+
+    def record_event(event: str, **payload: Any) -> None:
+        execution_events.append({
+            "event": event,
+            "sequence": len(execution_events) + 1,
+            **payload,
+        })
 
     # Entrada aislada para este caso de prueba. Imita input(): consume una
     # línea, elimina el salto final y lanza EOFError cuando ya no hay datos.
     input_stream = io.StringIO(input_data or "")
+    input_requests = 0
 
     def sandbox_input(prompt: str = "") -> str:
+        nonlocal input_requests
+        input_requests += 1
+        if input_limit is not None and input_requests > input_limit:
+            raise InputLimitExceeded(
+                f"El programa solicitó más de {input_limit} datos de entrada"
+            )
         if prompt:
-            print(prompt, end="")
+            record_event("input_prompt", text=str(prompt))
+            builtins.print(prompt, end="")
         line = input_stream.readline()
         if line == "":
             raise EOFError("No hay más datos de entrada para este caso de prueba")
-        return line.rstrip("\r\n")
+        value = line.rstrip("\r\n")
+        record_event("input_value", value=value)
+        return value
+
+    def sandbox_print(
+        *values: Any,
+        sep: str | None = " ",
+        end: str | None = "\n",
+        file=None,
+        flush: bool = False,
+    ) -> None:
+        effective_sep = " " if sep is None else sep
+        effective_end = "\n" if end is None else end
+        if file is None or file is sys.stdout:
+            rendered = effective_sep.join(str(value) for value in values) + effective_end
+            record_event("print", text=rendered)
+        builtins.print(
+            *values,
+            sep=sep,
+            end=end,
+            file=file,
+            flush=flush,
+        )
+
+    def sandbox_capture(value: Any) -> None:
+        """Registra el retorno solicitado por el arnés sin imprimirlo en consola."""
+        record_event("evaluation_result", value_repr=repr(value))
 
     # 2) Builtins permitidos para ejercicios de programación
     allowed_builtins = {
         # I/O
-        "print": print,
+        "print": sandbox_print,
         "input": sandbox_input,
+        "__tutorats_capture__": sandbox_capture,
         # Secuencias y colecciones
         "range": range,
         "len": len,
@@ -214,8 +273,8 @@ def _run_code_in_process(code: str, input_data: str | None = None) -> Dict[str, 
 
     g = {"__builtins__": allowed_builtins}
     l: Dict[str, Any] = {}
-    buf_out = _LimitedStringIO(_MAX_OUTPUT_CHARS)
-    buf_err = _LimitedStringIO(_MAX_OUTPUT_CHARS)
+    buf_out = _LimitedStringIO(output_limit)
+    buf_err = _LimitedStringIO(output_limit)
     status = "ok"
     stdout = ""
     stderr = ""
@@ -232,6 +291,7 @@ def _run_code_in_process(code: str, input_data: str | None = None) -> Dict[str, 
     except Exception as e:
         status = "error"
         error_type = e.__class__.__name__
+        record_event("exception", error_type=error_type)
         try:
             traceback.print_exc(file=buf_err)
         except OutputLimitExceeded:
@@ -247,6 +307,7 @@ def _run_code_in_process(code: str, input_data: str | None = None) -> Dict[str, 
         "stderr": stderr,
         "error_type": error_type,
         "runtime_ms": runtime_ms,
+        "events": execution_events,
     }
 
 
@@ -254,6 +315,8 @@ def run_code_sandboxed(
     code: str,
     input_data: str | None = None,
     timeout_seconds: float = _EXECUTION_TIMEOUT_SECONDS,
+    max_output_chars: int | None = None,
+    max_input_requests: int | None = None,
 ) -> Dict[str, Any]:
     """
     Ejecuta cada solución en un subproceso desechable.
@@ -269,6 +332,7 @@ def run_code_sandboxed(
             "stderr": f"El código supera el límite de {_MAX_CODE_BYTES} bytes",
             "error_type": "SandboxError",
             "runtime_ms": None,
+            "events": [],
         }
 
     error_msg = _ast_check(code)
@@ -279,9 +343,15 @@ def run_code_sandboxed(
             "stderr": error_msg,
             "error_type": "SandboxError",
             "runtime_ms": None,
+            "events": [],
         }
 
-    payload = json.dumps({"code": code, "input_data": input_data})
+    payload = json.dumps({
+        "code": code,
+        "input_data": input_data,
+        "max_output_chars": max_output_chars,
+        "max_input_requests": max_input_requests,
+    })
     project_root = Path(__file__).resolve().parents[3]
 
     try:
@@ -304,6 +374,7 @@ def run_code_sandboxed(
             ),
             "error_type": "TimeoutError",
             "runtime_ms": timeout_seconds * 1000,
+            "events": [{"event": "timeout", "sequence": 1}],
         }
     except OSError:
         return {
@@ -312,6 +383,7 @@ def run_code_sandboxed(
             "stderr": "No se pudo iniciar el entorno aislado de ejecución",
             "error_type": "WorkerError",
             "runtime_ms": None,
+            "events": [],
         }
 
     if completed.returncode != 0:
@@ -321,6 +393,7 @@ def run_code_sandboxed(
             "stderr": "El entorno aislado terminó de forma inesperada",
             "error_type": "WorkerError",
             "runtime_ms": None,
+            "events": [],
         }
 
     try:
@@ -332,6 +405,7 @@ def run_code_sandboxed(
             "stderr": "El entorno aislado devolvió una respuesta inválida",
             "error_type": "WorkerError",
             "runtime_ms": None,
+            "events": [],
         }
 
     if not isinstance(result, dict):
@@ -341,34 +415,7 @@ def run_code_sandboxed(
             "stderr": "El entorno aislado devolvió una respuesta inválida",
             "error_type": "WorkerError",
             "runtime_ms": None,
+            "events": [],
         }
 
     return result
-
-
-# ---------------------------------------------------------------------------
-# Validación pedagógica
-# ---------------------------------------------------------------------------
-
-def validate_logic(actual_output: str, test_cases: List[Any]) -> Dict[str, Any]:
-    """
-    Compara la salida obtenida del sandbox contra los casos de prueba definidos.
-    Aplica normalización de espacios y saltos de línea.
-    """
-    if not test_cases:
-        return {
-            "is_correct": False,
-            "failed_case": "Sin casos de prueba configurados",
-        }
-
-    for case in test_cases:
-        clean_actual = actual_output.strip()
-        clean_expected = case.expected_output.strip()
-
-        if clean_actual != clean_expected:
-            return {
-                "is_correct": False,
-                "failed_case": clean_expected if not case.is_hidden else "Oculto"
-            }
-
-    return {"is_correct": True, "failed_case": None}

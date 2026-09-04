@@ -12,6 +12,8 @@ def main() -> None:
         result = _run_code_in_process(
             code=payload.get("code", ""),
             input_data=payload.get("input_data"),
+            max_output_chars=payload.get("max_output_chars"),
+            max_input_requests=payload.get("max_input_requests"),
         )
     except Exception as exc:
         result = {
@@ -20,6 +22,7 @@ def main() -> None:
             "stderr": f"Error interno del ejecutor: {exc.__class__.__name__}",
             "error_type": "WorkerError",
             "runtime_ms": None,
+            "events": [],
         }
 
     sys.stdout.write(json.dumps(result, ensure_ascii=False))

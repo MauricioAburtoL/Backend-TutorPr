@@ -1,6 +1,6 @@
 # backend/core/services/gemini_orchestrator.py
 import threading
-from typing import List, Dict, Any
+from typing import Dict
 from backend.schemas.geminiSchemas import AssistRequest
 from backend.core.services.GeminiTutoringService import GeminiTutoringService
 from backend.core.services.gemini_cache import gemini_cache, CacheEntry
@@ -24,8 +24,10 @@ def get_or_fetch(
     code: str,
     language: str,
     context: str = "",
-    static_errors: List[Dict[str, Any]] = None,
     student_context: str = "",
+    evaluation_status: str = None,
+    program_output: str = "",
+    program_error: str = "",
 ) -> CacheEntry:
     """
     Retorna la respuesta cacheada de Gemini para esta combinacion user/exercise/code.
@@ -37,10 +39,17 @@ def get_or_fetch(
         code: Codigo fuente del estudiante
         language: Lenguaje de programacion (python, javascript, etc.)
         context: Contexto del ejercicio (descripcion, instrucciones)
-        static_errors: Errores detectados por analisis estatico (compilador)
+        student_context: Perfil del estudiante en hechos directos
+        evaluation_status: Veredicto ya emitido por el evaluador
+        program_output: Consola visible producida por el programa
+        program_error: Error reportado durante la ejecucion
 
     Returns:
         CacheEntry con la respuesta de Gemini y el estado de entrega de hints
+
+    La clave de caché sigue siendo el código: para un mismo ejercicio, el mismo
+    código produce siempre la misma evaluación, así que el contexto añadido no
+    introduce variantes que la caché deba distinguir.
     """
     # El segundo chequeo dentro del lock evita que dos clics simultáneos hagan
     # dos llamadas externas antes de que la primera alcance a llenar la caché.
@@ -54,6 +63,9 @@ def get_or_fetch(
             language=language,
             studentCode=code,
             studentContext=student_context,
+            evaluationStatus=evaluation_status,
+            programOutput=program_output,
+            programError=program_error,
         )
-        response = _gemini_service.analyze_code(request, static_errors=static_errors)
+        response = _gemini_service.analyze_code(request)
         return gemini_cache.put(user_id, exercise_id, code, response)

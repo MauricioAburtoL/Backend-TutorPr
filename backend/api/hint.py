@@ -4,7 +4,7 @@ import re
 import time
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List
 
 # Rutas modulares
 from ..infra.db import get_db
@@ -166,6 +166,52 @@ def hint(body: HintIn, db: Session = Depends(get_db)):
             detected_errors=[],
         )
 
+    # Los estados inconclusos describen una limitación del enlace o de la
+    # presentación, no un fallo lógico. Se explican localmente para no pedir al
+    # LLM que invente un diagnóstico ni exponer detalles de casos ocultos.
+    evaluation_status = exec_data.get("evaluation_status")
+    local_evaluation_hints = {
+        "binding_inconclusive": (
+            "No pude identificar con suficiente seguridad cuáles valores representan "
+            "las entradas del ejercicio. Puedes solicitarlos con input() o separar con "
+            "mayor claridad los datos de las constantes del cálculo."
+        ),
+        "output_inconclusive": (
+            "El programa terminó, pero no pude identificar una respuesta final compatible. "
+            "Intenta mostrar claramente el resultado al final del programa."
+        ),
+        "configuration_error": (
+            "El ejercicio no pudo evaluarse por una configuración interna. "
+            "No necesitas cambiar tu solución por este mensaje."
+        ),
+    }
+    if evaluation_status in local_evaluation_hints:
+        hint_text = local_evaluation_hints[evaluation_status]
+        db.add(Event(
+            user_id=body.userId,
+            session_id=body.sessionId,
+            exercise_id=body.exerciseId,
+            event="HintShown",
+            detector="rules",
+            confidence=1.0,
+            payload={
+                "attempt_id": body.attemptId,
+                "pattern_id": evaluation_status,
+                "hint": hint_text,
+                "source": "rules",
+                "latency_ms": round((time.perf_counter() - started_at) * 1000, 2),
+            },
+        ))
+        db.commit()
+        return HintOut(
+            hint=hint_text,
+            pattern_id=evaluation_status,
+            concept="evaluacion",
+            source="rules",
+            has_more_hints=False,
+            detected_errors=[],
+        )
+
     # 2. Obtener contexto real del ejercicio y test cases desde la BD
     exercise = db.query(Exercise).filter(Exercise.id == body.exerciseId).first()
     exercise_context = f"{exercise.title}: {exercise.description}" if exercise else f"Exercise {body.exerciseId}"
@@ -226,8 +272,14 @@ def hint(body: HintIn, db: Session = Depends(get_db)):
             code=body.code,
             language=(body.lang or "python").lower(),
             context=exercise_context,
-            static_errors=static_errors,
             student_context=student_context,
+            # El veredicto y la consola visible evitan que el modelo deduzca por
+            # su cuenta si la solución falló. No se envían casos de prueba ni el
+            # resultado esperado: la consola ya está redactada por `/api/execute`
+            # cuando el fallo ocurrió en un caso oculto.
+            evaluation_status=evaluation_status,
+            program_output=exec_data.get("stdout", "") or "",
+            program_error=exec_data.get("stderr", "") or "",
         )
 
         # 3. Solo caer al fallback si Gemini tuvo un fallo de sistema real

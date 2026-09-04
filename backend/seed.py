@@ -8,6 +8,13 @@ from backend.core.eva02_tasks import (
     EVA02_TEST_CASES,
     EVA02_TOPIC,
 )
+from backend.core.evaluation.catalog import (
+    FLEXIBLE_PILOT_EXERCISES,
+    FLEXIBLE_PILOT_TOPIC,
+    PUBLISHED_EXERCISE_CONTRACTS,
+    TRIANGLE_AREA_STARTER_CODE,
+)
+from backend.core.evaluation.contracts import ExerciseContractDefinition
 
 def _hash_password(password: str) -> str:
     return hashlib.sha256(password.encode("utf-8")).hexdigest()
@@ -125,6 +132,7 @@ def seed_data():
             },
         ]
         topics_data.append(EVA02_TOPIC)
+        topics_data.append(FLEXIBLE_PILOT_TOPIC)
 
         # =============================================
         # 2. EJERCICIOS (Exercises)
@@ -136,7 +144,7 @@ def seed_data():
                 "title": "Área de un triángulo",
                 "description": "Calcular el área de un triángulo dada su base y altura. Usa la fórmula: área = base × altura / 2.",
                 "difficulty": "Fácil",
-                "base_code": "# Calcula el área de un triángulo\n# Lee la base y la altura, luego imprime el área\nbase = int(input())\naltura = int(input())\n# Tu código aquí\n"
+                "base_code": TRIANGLE_AREA_STARTER_CODE,
             },
             {
                 "id": "e-sec-2", "topic_id": "secuencial", "order": 2,
@@ -429,6 +437,7 @@ def seed_data():
             },
         ]
         exercises_data.extend(EVA02_EXERCISES)
+        exercises_data.extend(FLEXIBLE_PILOT_EXERCISES)
 
         # =============================================
         # 3. CASOS DE PRUEBA (Test Cases)
@@ -533,6 +542,25 @@ def seed_data():
             else:
                 db.add(models.TestCase(**tc))
 
+        # Contratos publicados: activan el evaluador flexible por ejercicio.
+        for raw_contract in PUBLISHED_EXERCISE_CONTRACTS:
+            contract = ExerciseContractDefinition.model_validate(raw_contract)
+            definition = contract.model_dump(mode="json", by_alias=True)
+            existing_contract = db.query(models.ExerciseContract).filter(
+                models.ExerciseContract.exercise_id == contract.exercise_id,
+                models.ExerciseContract.version == contract.contract_version,
+            ).first()
+            if existing_contract:
+                existing_contract.status = "published"
+                existing_contract.definition = definition
+            else:
+                db.add(models.ExerciseContract(
+                    exercise_id=contract.exercise_id,
+                    version=contract.contract_version,
+                    status="published",
+                    definition=definition,
+                ))
+
         # =============================================
         # 4. USUARIO ALUMNO (login real, sin auto-registro)
         # =============================================
@@ -577,6 +605,7 @@ def seed_data():
         print(f"   {len(topics_data)} temas")
         print(f"   {len(exercises_data)} ejercicios")
         print(f"   {len(test_cases_data)} casos de prueba")
+        print(f"   {len(PUBLISHED_EXERCISE_CONTRACTS)} contratos flexibles")
         print("   1 usuario alumno (login: alumno / 123)")
 
     except Exception as e:

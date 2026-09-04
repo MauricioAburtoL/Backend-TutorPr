@@ -3,8 +3,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import desc # Importante para el ordenamiento
 from typing import List, Optional
 # Importamos los nombres exactos de tu archivo models.py
-from ..core.models import Topic, Exercise, UserStats, Event 
-from ..schemas import TopicSchema, ExerciseSchema, UserStatsSchema
+from ..core.models import Topic, Exercise, ExerciseContract, UserStats, Event
 
 class StorageSQLite:
     def __init__(self, db: Session):
@@ -27,6 +26,21 @@ class StorageSQLite:
     def get_exercise_by_id(self, exercise_id: str) -> Optional[Exercise]:
         """Busca un ejercicio específico."""
         return self.db.query(Exercise).filter(Exercise.id == exercise_id).first()
+
+    def get_active_exercise_contract(
+        self,
+        exercise_id: str,
+    ) -> Optional[ExerciseContract]:
+        """Obtiene el contrato publicado más reciente de un ejercicio."""
+        return (
+            self.db.query(ExerciseContract)
+            .filter(
+                ExerciseContract.exercise_id == exercise_id,
+                ExerciseContract.status == "published",
+            )
+            .order_by(ExerciseContract.version.desc())
+            .first()
+        )
 
     # --- Lógica de Usuario y Analytics ---
     def get_user_stats(self, user_id: str) -> Optional[UserStats]:
@@ -98,28 +112,3 @@ class StorageSQLite:
             .all()
         )
 
-    def get_exercise_by_id(self, exercise_id: str):
-        """Consulta la tabla 'exercises' por ID."""
-        from ..core.models import Exercise # Asegúrate de importar tu modelo
-        return self.db.query(Exercise).filter(Exercise.id == exercise_id).first()
-
-    def create_event(self, event_data: dict) -> Event:
-        """Registra un evento de interacción (ej. ejecución de código) para telemetría."""
-        db_event = Event(**event_data)
-        self.db.add(db_event)
-        self.db.commit()
-        self.db.refresh(db_event)
-        return db_event
-
-    def update_user_progress(self, user_id: str, success: bool):
-        """
-        Actualiza los contadores de progreso del usuario.
-        """
-        stats = self.get_user_stats(user_id)
-        if stats:
-            if success:
-                stats.exercises_completed += 1 
-            
-            self.db.commit()
-            self.db.refresh(stats)
-        return stats

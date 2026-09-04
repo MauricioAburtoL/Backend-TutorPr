@@ -5,9 +5,6 @@ from dotenv import load_dotenv
 load_dotenv()
 from backend.infra.db import init_db
 
-# Infra (base de datos)
-from backend.infra.db import engine, Base
-
 # Routers de la capa API
 from backend.api import execute, hint, cfg, kpis, assist, auth, events
 
